@@ -1,38 +1,41 @@
 import { NextResponse } from 'next/server';
-import { db } from '../../../lib/db';
+import { animalsData } from '../../../data/animals-extended';
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get('category');
     const limit = searchParams.get('limit');
-    
-    let query = 'SELECT * FROM animals';
-    const params: any[] = [];
-    
+
+    // Assign IDs based on index + 1
+    const animalsWithIds = animalsData.map((animal, index) => ({
+      id: index + 1,
+      ...animal
+    }));
+
+    let animals = animalsWithIds;
+
     if (category && category !== 'all') {
-      query += ' WHERE category = ?';
-      params.push(category);
+      animals = animals.filter(a => a.category === category);
     }
-    
-    query += ' ORDER BY category, korean_name';
-    
+
+    // Default sorting in extended data seems grouped by category, 
+    // but the SQL used to order by category, korean_name.
+    // We can keep it or just return as is (which is grouped).
+    // Let's sort by korean_name within category mostly
+    // or just trust the order in the file as it's curated.
+
     if (limit) {
-      query += ' LIMIT ?';
-      params.push(parseInt(limit));
+      animals = animals.slice(0, parseInt(limit));
     }
-    
-    const animals = params.length > 0 
-      ? await db.prepare(query).all(...params)
-      : await db.prepare(query).all();
 
     // Add statistics
     const stats = {
-      total: animals.length,
+      total: animalsWithIds.length,
       byCategory: {
-        current: animals.filter((a: any) => a.category === 'current').length,
-        mythical: animals.filter((a: any) => a.category === 'mythical').length,
-        prehistoric: animals.filter((a: any) => a.category === 'prehistoric').length
+        current: animalsWithIds.filter(a => a.category === 'current').length,
+        mythical: animalsWithIds.filter(a => a.category === 'mythical').length,
+        prehistoric: animalsWithIds.filter(a => a.category === 'prehistoric').length
       }
     };
 

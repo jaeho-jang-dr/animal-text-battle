@@ -7,6 +7,7 @@ import UsersTab from '../../components/admin/UsersTab';
 import BattlesTab from '../../components/admin/BattlesTab';
 import LogsTab from '../../components/admin/LogsTab';
 import SettingsTab from '../../components/admin/SettingsTab';
+import NpcsTab from '../../components/admin/NpcsTab';
 
 interface AdminStats {
   totalUsers: number;
@@ -47,7 +48,7 @@ export default function AdminPage() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
   const [showMagicEffect, setShowMagicEffect] = useState(false);
-  const [activeTab, setActiveTab] = useState<'stats' | 'users' | 'battles' | 'settings' | 'logs'>('stats');
+  const [activeTab, setActiveTab] = useState<'stats' | 'users' | 'battles' | 'settings' | 'logs' | 'npcs'>('stats');
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
@@ -60,14 +61,14 @@ export default function AdminPage() {
         setIsAuthorized(true);
         setShowLogin(false);
         fetchStats();
-        
+
         // 5초마다 통계 자동 새로고침
         const interval = setInterval(fetchStats, 5000);
         setRefreshInterval(interval);
       }
     }
     setIsLoading(false);
-    
+
     return () => {
       if (refreshInterval) {
         clearInterval(refreshInterval);
@@ -96,7 +97,7 @@ export default function AdminPage() {
         // 관리자 정보 저장
         localStorage.setItem('adminToken', data.data.token);
         localStorage.setItem('adminUser', JSON.stringify(data.data.adminUser));
-        
+
         setAdminUser(data.data.adminUser);
         setIsAuthorized(true);
         setShowLogin(false);
@@ -291,18 +292,18 @@ export default function AdminPage() {
       <div className="bg-white shadow-md sticky top-0 z-10">
         <div className="max-w-7xl mx-auto">
           <div className="flex">
-            {['stats', 'users', 'battles', 'logs', 'settings'].map((tab) => (
+            {['stats', 'users', 'npcs', 'battles', 'logs', 'settings'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab as any)}
-                className={`flex-1 py-4 px-6 font-bold transition-all ${
-                  activeTab === tab
-                    ? 'bg-purple-500 text-white'
-                    : 'bg-white text-gray-700 hover:bg-purple-100'
-                }`}
+                className={`flex-1 py-4 px-6 font-bold transition-all ${activeTab === tab
+                  ? 'bg-purple-500 text-white'
+                  : 'bg-white text-gray-700 hover:bg-purple-100'
+                  }`}
               >
                 {tab === 'stats' && '📊 통계'}
                 {tab === 'users' && '👥 사용자'}
+                {tab === 'npcs' && '🤖 NPC 부대'}
                 {tab === 'battles' && '⚔️ 배틀'}
                 {tab === 'logs' && '📜 로그'}
                 {tab === 'settings' && '⚙️ 설정'}
@@ -335,7 +336,7 @@ export default function AdminPage() {
                     일반: {stats?.registeredUsers || 0} / 게스트: {stats?.guestUsers || 0}
                   </div>
                 </motion.div>
-                
+
                 <motion.div
                   whileHover={{ scale: 1.05 }}
                   className="bg-white rounded-xl shadow-lg p-6 text-center"
@@ -347,7 +348,7 @@ export default function AdminPage() {
                     봇: {stats?.botCharacters || 0}
                   </div>
                 </motion.div>
-                
+
                 <motion.div
                   whileHover={{ scale: 1.05 }}
                   className="bg-white rounded-xl shadow-lg p-6 text-center"
@@ -359,7 +360,7 @@ export default function AdminPage() {
                     이번주: {stats?.weekBattles || 0}
                   </div>
                 </motion.div>
-                
+
                 <motion.div
                   whileHover={{ scale: 1.05 }}
                   className="bg-white rounded-xl shadow-lg p-6 text-center"
@@ -371,7 +372,7 @@ export default function AdminPage() {
                     활성: {stats?.activeUsers || 0}
                   </div>
                 </motion.div>
-                
+
                 <motion.div
                   whileHover={{ scale: 1.05 }}
                   className="bg-white rounded-xl shadow-lg p-6 text-center"
@@ -380,7 +381,7 @@ export default function AdminPage() {
                   <div className="text-2xl font-bold text-red-600">{stats?.suspendedUsers || 0}</div>
                   <div className="text-gray-600">정지 사용자</div>
                 </motion.div>
-                
+
                 <motion.div
                   whileHover={{ scale: 1.05 }}
                   className="bg-white rounded-xl shadow-lg p-6 text-center"
@@ -434,8 +435,8 @@ export default function AdminPage() {
                           </td>
                           <td className="px-4 py-3 text-center font-bold">{char.elo_score}</td>
                           <td className="px-4 py-3 text-center">
-                            {char.total_battles > 0 
-                              ? Math.round((char.wins / char.total_battles) * 100) 
+                            {char.total_battles > 0
+                              ? Math.round((char.wins / char.total_battles) * 100)
                               : 0}%
                           </td>
                           <td className="px-4 py-3 text-center">
@@ -541,9 +542,8 @@ export default function AdminPage() {
                             </div>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <span className={`font-bold ${
-                              battle.winner_id === battle.attacker_id ? 'text-green-600' : 'text-red-600'
-                            }`}>
+                            <span className={`font-bold ${battle.winner_id === battle.attacker_id ? 'text-green-600' : 'text-red-600'
+                              }`}>
                               {battle.winner_name}
                             </span>
                           </td>
@@ -576,6 +576,18 @@ export default function AdminPage() {
               exit={{ opacity: 0, y: -20 }}
             >
               <UsersTab />
+            </motion.div>
+          )}
+
+          {/* NPC 탭 */}
+          {activeTab === 'npcs' && (
+            <motion.div
+              key="npcs"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+            >
+              <NpcsTab />
             </motion.div>
           )}
 
@@ -627,7 +639,7 @@ export default function AdminPage() {
         >
           🏆
         </motion.button>
-        
+
         <motion.button
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
@@ -636,7 +648,7 @@ export default function AdminPage() {
         >
           🎮
         </motion.button>
-        
+
         <motion.button
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}

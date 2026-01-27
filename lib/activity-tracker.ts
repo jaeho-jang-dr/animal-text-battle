@@ -1,13 +1,12 @@
-import { db } from './db';
+import { adminDb } from './firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
 export async function updateUserActivity(userId: string) {
   try {
     // 사용자의 마지막 로그인 시간 업데이트
-    await db.prepare(`
-      UPDATE users 
-      SET last_login = CURRENT_TIMESTAMP 
-      WHERE id = ?
-    `).run(userId);
+    await adminDb.collection('users').doc(userId).update({
+      lastLogin: FieldValue.serverTimestamp()
+    });
   } catch (error) {
     console.error('Activity update error:', error);
   }
@@ -15,12 +14,14 @@ export async function updateUserActivity(userId: string) {
 
 export async function logUserAction(userId: string, action: string, details?: any) {
   try {
-    // 사용자 활동 로그 (admin_logs 테이블 활용)
-    const logId = Math.random().toString(36).substring(7);
-    await db.prepare(`
-      INSERT INTO admin_logs (id, admin_id, action_type, target_type, details, created_at)
-      VALUES (?, ?, ?, 'user_action', ?, CURRENT_TIMESTAMP)
-    `).run(logId, userId, action, JSON.stringify(details || {}));
+    // 사용자 활동 로그 (admin_logs 컬렉션 활용)
+    await adminDb.collection('admin_logs').add({
+      adminId: userId, // Assuming current user is the actor
+      actionType: action,
+      targetType: 'user_action',
+      details: details || {},
+      createdAt: FieldValue.serverTimestamp()
+    });
   } catch (error) {
     console.error('Action logging error:', error);
   }

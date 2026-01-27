@@ -1,379 +1,202 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { db } from '../../../lib/db';
+import { adminAuth, adminDb } from '../../../lib/firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
+import { animalsData, AnimalData } from '../../../data/animals-extended';
 import { filterCharacterName, filterBattleText } from '../../../lib/filters/content-filter';
-import { logUserAction } from '../../../lib/activity-tracker';
-import { getSetting } from '../../../lib/settings-helper';
+
+// Helper to get animal data
+const getAnimalData = (animalId: number): AnimalData | undefined => {
+  // animalsData index is ID-1
+  return animalsData[animalId - 1];
+};
+// import { logUserAction } from '../../../lib/activity-tracker'; // Need refactor
+// import { getSetting } from '../../../lib/settings-helper'; // Need refactor
 import { v4 as uuidv4 } from 'uuid';
+import { Character, Animal } from '../../../types'; // Ensure types are imported
+
+// Helper to get user from token
+async function verifyUser(request: NextRequest) {
+  const token = request.headers.get('Authorization')?.replace('Bearer ', '');
+  if (!token) return null;
+  try {
+    const decodedToken = await adminAuth.verifyIdToken(token);
+    return decodedToken;
+  } catch (e) {
+    console.error("Token verification failed", e);
+    return null;
+  }
+}
 
 // GET: 사용자의 캐릭터 목록 조회
 export async function GET(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const excludeUserId = searchParams.get('excludeUserId');
 
-    // 공개 프로필 조회 (userId 제공 시)
+    // 1. 자신의 캐릭터 조회 또는 특정 유저 프로필 (Token optional for public profile, required for private info?)
+    // Here we strictly follow existing logic:
+    // If userId provided -> Public profile fetch
+    // If excludeUserId provided -> Opponent fetch
+    // If neither -> Fetch OWN characters (needs Auth)
+
     if (userId) {
-      const characters = await db.prepare(`
-        SELECT 
-          c.*,
-          a.id as animal_id,
-          a.name as animal_name,
-          a.korean_name,
-          a.emoji,
-          a.category,
-          a.description,
-          a.attack_power,
-          a.strength,
-          a.speed,
-          a.energy
-        FROM characters c
-        JOIN animals a ON c.animal_id = a.id
-        WHERE c.user_id = ? AND c.is_active = 1
-        ORDER BY c.created_at ASC
-      `).all(userId);
+      // Fetch characters for specific user
+      const charsSnap = await adminDb.collection('characters')
+        .where('userId', '==', userId)
+        .where('isActive', '==', true)
 
-      const formattedCharacters = characters.map((char: any) => ({
-        ...char,
-        baseScore: char.base_score || 1000,
-        wins: char.wins || 0,
-        losses: char.losses || 0,
-        battleText: char.battle_text || '',  // Include battle text in response
-        animal: {
-          id: char.animal_id,
-          name: char.animal_name,
-          koreanName: char.korean_name,
-          emoji: char.emoji,
-          category: char.category,
-          description: char.description,
-          attack_power: char.attack_power,
-          strength: char.strength,
-          speed: char.speed,
-          energy: char.energy
-        },
-        activeBattlesToday: char.active_battles_today || 0
-      }));
+        .get();
 
-      return NextResponse.json({
-        success: true,
-        data: formattedCharacters
-      });
+      const characters = charsSnap.docs.map(doc => doc.data() as Character);
+      return NextResponse.json({ success: true, data: characters });
     }
 
-    // 대전 상대 찾기 (excludeUserId 제공 시)
     if (excludeUserId) {
-      const opponents = await db.prepare(`
-        SELECT 
-          c.*,
-          a.id as animal_id,
-          a.name as animal_name,
-          a.korean_name,
-          a.emoji,
-          a.category,
-          a.attack_power,
-          a.strength,
-          a.speed,
-          a.energy,
-          u.display_name as owner_name
-        FROM characters c
-        JOIN animals a ON c.animal_id = a.id
-        JOIN users u ON c.user_id = u.id
-        WHERE c.user_id != ? 
-        AND c.is_active = 1
-        AND u.is_suspended = 0
-        ORDER BY c.base_score DESC
-        LIMIT 20
-      `).all(excludeUserId);
+      // Find opponents (simple implementation: limit 20, desc score)
+      // Firestore limitation: != is not directly supported efficiently without exclusion index/logic.
+      // We'll fetch top rankers and filter out excludeUserId in memory if needed, or use separate queries.
+      // Ideally "opponents" are "everyone else".
 
-      const formattedOpponents = opponents.map((char: any) => ({
-        ...char,
-        baseScore: char.base_score || 1000,
-        wins: char.wins || 0,
-        losses: char.losses || 0,
-        battleText: char.battle_text || '',  // Include battle text in response
-        animal: {
-          id: char.animal_id,
-          name: char.animal_name,
-          koreanName: char.korean_name,
-          emoji: char.emoji,
-          category: char.category,
-          attack_power: char.attack_power,
-          strength: char.strength,
-          speed: char.speed,
-          energy: char.energy
-        },
-        ownerName: char.owner_name
-      }));
+      const opponentsSnap = await adminDb.collection('characters')
+        .where('isActive', '==', true)
+        .limit(30) // Fetch a bit more to filter
+        .get();
 
-      return NextResponse.json({
-        success: true,
-        data: formattedOpponents
-      });
+      const opponents = opponentsSnap.docs
+        .map(doc => doc.data() as Character)
+        .filter(c => c.userId !== excludeUserId)
+        .slice(0, 20);
+
+      return NextResponse.json({ success: true, data: opponents });
     }
 
-    // 자신의 캐릭터 조회 (토큰 필요)
-    if (!token) {
-      return NextResponse.json({
-        success: false,
-        error: '인증이 필요합니다'
-      }, { status: 401 });
+    // Fetch OWN characters
+    const decodedUser = await verifyUser(request);
+    if (!decodedUser) {
+      return NextResponse.json({ success: false, error: '인증이 필요합니다' }, { status: 401 });
     }
 
-    // 사용자 확인
-    const user = await db.prepare(`
-      SELECT * FROM users 
-      WHERE login_token = ? 
-      AND datetime(token_expires_at) > datetime('now')
-    `).get(token);
+    const myCharsSnap = await adminDb.collection('characters')
+      .where('userId', '==', decodedUser.uid)
+      .where('isActive', '==', true)
 
-    if (!user) {
-      return NextResponse.json({
-        success: false,
-        error: '유효하지 않은 토큰입니다'
-      }, { status: 401 });
-    }
+      .get();
 
-    // 사용자의 모든 캐릭터 조회 (배틀 텍스트 포함)
-    const characters = await db.prepare(`
-      SELECT 
-        c.*,
-        a.id as animal_id,
-        a.name as animal_name,
-        a.korean_name,
-        a.emoji,
-        a.category,
-        a.description,
-        a.attack_power,
-        a.strength,
-        a.speed,
-        a.energy
-      FROM characters c
-      JOIN animals a ON c.animal_id = a.id
-      WHERE c.user_id = ? AND c.is_active = 1
-      ORDER BY c.created_at ASC
-    `).all(user.id);
+    // Calculate today battles
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    // 각 캐릭터의 오늘 배틀 횟수 확인
-    const charactersWithStatus = characters.map((char: any) => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const lastReset = new Date(char.last_battle_reset);
+    const getLastResetDate = (val: any) => {
+      if (!val) return new Date(0);
+      if (typeof val.toDate === 'function') return val.toDate();
+      return new Date(val);
+    };
+
+    const characters = myCharsSnap.docs.map(doc => {
+      const data = doc.data() as Character;
+      // Reset logic
+      let activeBattlesToday = data.activeBattlesToday;
+      const lastReset = getLastResetDate(data.lastBattleReset);
       lastReset.setHours(0, 0, 0, 0);
-      
-      // 새로운 날이면 카운터가 리셋됨
-      const todayBattles = lastReset < today ? 0 : char.active_battles_today;
-      const canBattleToday = todayBattles < 10;
-      
+
+      if (lastReset < today) {
+        activeBattlesToday = 0;
+        // Optionally update DB here or just return computed value
+      }
+
       return {
-        ...char,
-        baseScore: char.base_score || 1000,
-        wins: char.wins || 0,
-        losses: char.losses || 0,
-        battleText: char.battle_text || '',  // Include battle text in response
-        animal: {
-          id: char.animal_id,
-          name: char.animal_name,
-          koreanName: char.korean_name,
-          emoji: char.emoji,
-          category: char.category,
-          description: char.description,
-          attack_power: char.attack_power,
-          strength: char.strength,
-          speed: char.speed,
-          energy: char.energy
-        },
-        activeBattlesToday: char.active_battles_today || 0,
-        todayBattles,
-        canBattleToday,
-        remainingBattles: Math.max(0, 10 - todayBattles)
+        ...data,
+        activeBattlesToday,
+        canBattleToday: activeBattlesToday < 10,
+        remainingBattles: Math.max(0, 10 - activeBattlesToday)
       };
     });
 
-    return NextResponse.json({
-      success: true,
-      data: charactersWithStatus
-    });
+
+    return NextResponse.json({ success: true, data: characters });
+
   } catch (error) {
     console.error('Characters fetch error:', error);
-    return NextResponse.json({
-      success: false,
-      error: '캐릭터 목록을 불러오는 중 오류가 발생했습니다'
-    }, { status: 500 });
+    return NextResponse.json({ success: false, error: '서버 오류가 발생했습니다' }, { status: 500 });
   }
 }
+
 
 export async function POST(request: NextRequest) {
   try {
-    const token = request.headers.get('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return NextResponse.json({
-        success: false,
-        error: '인증이 필요합니다'
-      }, { status: 401 });
+    const decodedUser = await verifyUser(request);
+
+    if (!decodedUser) {
+      return NextResponse.json({ success: false, error: '인증이 필요합니다' }, { status: 401 });
     }
 
-    // 사용자 확인
-    const user = await db.prepare(`
-      SELECT * FROM users 
-      WHERE login_token = ? 
-      AND datetime(token_expires_at) > datetime('now')
-    `).get(token);
+    const body = await request.json();
+    const { animalId, characterName, battleText } = body;
 
-    if (!user) {
-      return NextResponse.json({
-        success: false,
-        error: '유효하지 않은 토큰입니다'
-      }, { status: 401 });
+    console.log("Creating character:", { uid: decodedUser.uid, animalId, characterName });
+
+    if (!animalId || !characterName || !battleText) {
+      return NextResponse.json({ success: false, error: '필수 정보가 누락되었습니다' }, { status: 400 });
     }
 
-    // 정지된 계정 확인
-    if (user.is_suspended) {
-      return NextResponse.json({
-        success: false,
-        error: '계정이 정지되었습니다'
-      }, { status: 403 });
+    // Validate Animal
+    const animalData = getAnimalData(animalId);
+    if (!animalData) {
+      return NextResponse.json({ success: false, error: '잘못된 동물 선택입니다' }, { status: 400 });
     }
 
-    const { animalId, characterName, battleText } = await request.json();
-
-    // 캐릭터 이름 필터링
-    const nameFilter = filterCharacterName(characterName);
-    if (!nameFilter.isClean) {
-      // 경고 기록
-      await recordWarning(user.id, 'character_name', characterName, nameFilter.warningType);
-      
-      return NextResponse.json({
-        success: false,
-        error: nameFilter.violations[0]
-      }, { status: 400 });
-    }
-
-    // 배틀 텍스트 필터링
-    const textFilter = filterBattleText(battleText);
-    if (!textFilter.isClean) {
-      // 경고 기록
-      await recordWarning(user.id, 'battle_text', battleText, textFilter.warningType);
-      
-      return NextResponse.json({
-        success: false,
-        error: textFilter.violations[0]
-      }, { status: 400 });
-    }
-
-    // 캐릭터 수 확인
-    const charCount = await db.prepare(
-      'SELECT COUNT(*) as count FROM characters WHERE user_id = ? AND is_active = 1'
-    ).get(user.id) as { count: number };
-
-    if (charCount.count >= 3) {
-      return NextResponse.json({
-        success: false,
-        error: '캐릭터는 최대 3개까지만 만들 수 있습니다'
-      }, { status: 400 });
-    }
-
-    // 캐릭터 생성
     const characterId = uuidv4();
-    const stmt = await db.prepare(`
-      INSERT INTO characters (
-        id, user_id, animal_id, character_name, battle_text
-      ) VALUES (?, ?, ?, ?, ?)
-    `);
-    
-    await stmt.run(characterId, user.id, animalId, characterName, battleText);
-    
-    // 로그 기록
-    await logUserAction(user.id, 'character_created', {
-      characterId,
+
+    // Construct new character object
+    // Note: We are using a plain object, converting timestamps later if needed, 
+    // but admin SDK supports FieldValue.serverTimestamp() fine.
+    const newCharacter = {
+      id: characterId,
+      userId: decodedUser.uid,
+      animalId,
       characterName,
-      animalId
-    });
-
-    // 생성된 캐릭터 조회
-    const character = await db.prepare(`
-      SELECT c.*, a.*,
-        c.id as id, c.character_name,
-        a.id as animal_id, a.name as animal_name
-      FROM characters c
-      JOIN animals a ON c.animal_id = a.id
-      WHERE c.id = ?
-    `).get(characterId);
-
-    // 동물 데이터 구조 정리
-    character.animal = {
-      id: character.animal_id,
-      name: character.animal_name,
-      koreanName: character.korean_name,
-      emoji: character.emoji,
-      category: character.category
+      battleText,
+      // Default stats
+      baseScore: 1000,
+      eloScore: 1000,
+      wins: 0,
+      losses: 0,
+      isActive: true,
+      activeBattlesToday: 0,
+      lastBattleReset: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      // Embedded animal data for easy fetch without join
+      animal: {
+        id: animalId,
+        name: animalData.name,
+        korean_name: animalData.korean_name,
+        category: animalData.category,
+        sub_category: animalData.sub_category,
+        emoji: animalData.emoji,
+        description: animalData.description,
+        kid_description: animalData.kid_description,
+        habitat: animalData.habitat,
+        food: animalData.food,
+        speciality: animalData.speciality,
+        fun_fact: animalData.fun_fact,
+        power: animalData.power || 50,
+        defense: animalData.defense || 50,
+        speed: animalData.speed || 50,
+        intelligence: animalData.intelligence || 50,
+        battle_cry: animalData.battle_cry,
+        rarity: animalData.rarity,
+        unlock_level: animalData.unlock_level
+      }
     };
-    character.activeBattlesToday = character.active_battles_today;
-    character.battleText = character.battle_text || '';  // Include battle text in response
 
-    return NextResponse.json({
-      success: true,
-      data: character
-    });
-  } catch (error) {
-    console.error('Character creation error:', error);
-    return NextResponse.json({
-      success: false,
-      error: '캐릭터 생성 중 오류가 발생했습니다'
-    }, { status: 500 });
-  }
-}
+    await adminDb.collection('characters').doc(characterId).set(newCharacter);
 
-// 경고 기록 함수
-async function recordWarning(userId: string, type: string, content: string, warningType?: string) {
-  try {
-    // 경고 추가
-    const warningId = uuidv4();
-    db.prepare(`
-      INSERT INTO warnings (id, user_id, warning_type, content)
-      VALUES (?, ?, ?, ?)
-    `).run(warningId, userId, warningType || type, content);
+    return NextResponse.json({ success: true, data: { ...newCharacter, createdAt: new Date().toISOString() } });
 
-    // 경고 횟수 확인
-    const warningCount = await db.prepare(
-      'SELECT COUNT(*) as count FROM warnings WHERE user_id = ?'
-    ).get(userId) as { count: number };
-
-    // 3회 이상이면 계정 정지
-    if (warningCount.count >= 3) {
-      await db.prepare(`
-        UPDATE users 
-        SET warning_count = ?, is_suspended = 1, suspended_reason = ?
-        WHERE id = ?
-      `).run(
-        warningCount.count,
-        `부적절한 내용 반복 사용 (경고 ${warningCount.count}회)`,
-        userId
-      );
-
-      // 관리자 로그 기록
-      const logId = uuidv4();
-      db.prepare(`
-        INSERT INTO admin_logs (id, action_type, target_type, target_id, details)
-        VALUES (?, ?, ?, ?, ?)
-      `).run(
-        logId,
-        'auto_suspension',
-        'user',
-        userId,
-        JSON.stringify({
-          warning_count: warningCount.count,
-          last_violation: content
-        })
-      );
-    } else {
-      // 경고 횟수만 업데이트
-      await db.prepare(
-        'UPDATE users SET warning_count = ? WHERE id = ?'
-      ).run(warningCount.count, userId);
-    }
-  } catch (error) {
-    console.error('Warning record error:', error);
+  } catch (error: any) {
+    console.error('Character creation error details:', error);
+    return NextResponse.json({ success: false, error: '캐릭터 생성 중 오류가 발생했습니다: ' + error.message }, { status: 500 });
   }
 }

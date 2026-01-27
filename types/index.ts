@@ -14,27 +14,39 @@ export interface User {
 }
 
 // 동물 타입
+// 동물 타입
 export interface Animal {
   id: number;
   name: string;
-  koreanName: string;
-  category: 'current' | 'mythical' | 'prehistoric' | 'legend';
-  description: string;
-  abilities?: string;
+  korean_name: string; // Updated to snake_case
+  category: 'current' | 'mythical' | 'prehistoric' | 'custom'; // Added 'custom'
+  sub_category: string; // Added
   emoji: string;
+  description: string;
+  kid_description: string; // Added
+  habitat: string; // Added
+  food: string; // Added
+  speciality: string; // Added
+  fun_fact: string; // Added
+
+  // 전투 능력치 (Flat structure from animals-extended.ts)
+  power: number;
+  defense: number;
+  speed: number;
+  intelligence: number;
+
+  battle_cry: string; // Updated to snake_case
+  rarity: 'common' | 'rare' | 'epic' | 'legendary'; // Added
+  unlock_level: number; // Added
+
+  abilities?: string; // Optional/Legacy?
   imageUrl?: string;
-  detailedInfo?: {
+  detailedInfo?: { // Keeping for backward compat if needed, but data has flat fields
     habitat?: string;
     food?: string;
     speciality?: string;
     funFact?: string;
   };
-  // 전투 능력치
-  attack_power?: number;
-  strength?: number;
-  speed?: number;
-  energy?: number;
-  battleCry?: string;
 }
 
 // 캐릭터 타입

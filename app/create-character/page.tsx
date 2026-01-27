@@ -2,21 +2,30 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface Animal {
   id: number;
   name: string;
   korean_name: string;
   category: string;
-  description: string;
-  abilities: string;
+  sub_category: string;
   emoji: string;
-  color?: string;
-  attack_power: number;
-  strength: number;
+  description: string;
+  kid_description: string;
+  habitat: string;
+  food: string;
+  speciality: string;
+  fun_fact: string;
+  power: number;
+  defense: number;
   speed: number;
-  energy: number;
+  intelligence: number;
+  battle_cry: string;
+  rarity: string;
+  unlock_level: number;
+  abilities?: string;
+  color?: string;
 }
 
 interface Character {
@@ -25,11 +34,15 @@ interface Character {
   animal: Animal;
 }
 
+import { useAuth } from '../../contexts/AuthContext';
+
 export default function CreateCharacterPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const animalId = searchParams.get('animal');
-  
+
+  const { user, firebaseUser, isLoading: authLoading } = useAuth(); // Use AuthContext
+
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
   const [characterName, setCharacterName] = useState('');
   const [battleText, setBattleText] = useState('');
@@ -37,55 +50,59 @@ export default function CreateCharacterPage() {
   const [existingCharacters, setExistingCharacters] = useState<Character[]>([]);
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    checkAuthAndFetchData();
-  }, [animalId]);
+  // New State for Modal
+  const [isAnimalModalOpen, setIsAnimalModalOpen] = useState(false);
+  const [allAnimals, setAllAnimals] = useState<Animal[]>([]);
 
-  const checkAuthAndFetchData = async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      alert('로그인이 필요합니다!');
+  // Auth check
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
       router.push('/');
       return;
     }
+    // Only fetch user-specific data here
+    fetchUserCharacters();
+  }, [user, authLoading]);
 
-    // Fetch existing characters to check limit
+  // Animal fetch check (Independent)
+  useEffect(() => {
+    if (animalId) {
+      fetchAnimal(animalId);
+    }
+  }, [animalId]);
+
+  const fetchUserCharacters = async () => {
+    if (!firebaseUser) return;
     try {
+      const token = await firebaseUser.getIdToken();
       const response = await fetch('/api/characters', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-      
       const data = await response.json();
       if (data.success) {
         setExistingCharacters(data.data || []);
-        
-        // Check character limit
         if (data.data && data.data.length >= 3) {
           alert('캐릭터는 최대 3개까지만 만들 수 있어요!');
           router.push('/play');
-          return;
         }
       }
     } catch (error) {
       console.error('Failed to fetch characters:', error);
     }
-
-    // Fetch selected animal if animalId is provided
-    if (animalId) {
-      fetchAnimal(animalId);
-    }
   };
 
   const fetchAnimal = async (id: string) => {
     try {
-      const response = await fetch('/api/animals');
+      // Force freshness
+      const response = await fetch(`/api/animals?t=${Date.now()}`);
       const data = await response.json();
       if (data.success) {
         const animal = data.data.find((a: Animal) => a.id === parseInt(id));
         if (animal) {
           setSelectedAnimal(animal);
+        } else {
+          console.warn("Animal not found for ID:", id);
         }
       }
     } catch (error) {
@@ -95,7 +112,7 @@ export default function CreateCharacterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!selectedAnimal) {
       setError('동물을 선택해주세요!');
       return;
@@ -115,7 +132,9 @@ export default function CreateCharacterPage() {
     setError('');
 
     try {
-      const token = localStorage.getItem('token');
+      if (!firebaseUser) throw new Error("Authentication lost");
+      const token = await firebaseUser.getIdToken();
+
       const response = await fetch('/api/characters', {
         method: 'POST',
         headers: {
@@ -123,49 +142,107 @@ export default function CreateCharacterPage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          name: characterName,
+          characterName: characterName,
           animalId: selectedAnimal.id,
           battleText: battleText
         })
       });
 
       const data = await response.json();
+      console.log("Creation response:", data);
 
       if (data.success) {
-        alert('캐릭터가 생성되었습니다!');
-        router.push('/play');
+        // Force refresh user data or redirect
+        await router.push('/play');
       } else {
-        setError(data.error || '캐릭터 생성에 실패했습니다');
+        throw new Error(data.error || '캐릭터 생성에 실패했습니다.');
       }
-    } catch (error) {
-      console.error('Character creation error:', error);
-      setError('캐릭터 생성 중 오류가 발생했습니다');
+    } catch (error: any) {
+      console.error('Failed to create character:', error);
+      alert(error.message || '캐릭터 생성 중 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Fetch all animals for the modal
+  const fetchAllAnimals = async () => {
+    try {
+      const response = await fetch('/api/animals');
+      const data = await response.json();
+      if (data.success) {
+        setAllAnimals(data.data);
+      }
+    } catch (error) {
+      console.error('Failed to fetch animals:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchAllAnimals();
+  }, []);
+
   return (
-    <main className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100">
-      {/* 헤더 */}
-      <header className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 shadow-lg">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold mb-2">🎮 캐릭터 만들기</h1>
-              <p className="text-purple-200">
-                나만의 캐릭터를 만들어보세요! ({existingCharacters.length}/3)
-              </p>
-            </div>
-            <button
-              onClick={() => router.push('/play')}
-              className="bg-white/20 hover:bg-white/30 backdrop-blur px-6 py-3 rounded-xl font-bold transition-all duration-200 transform hover:scale-105"
+    <main className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100 relative">
+      <AnimatePresence>
+        {isAnimalModalOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => setIsAnimalModalOpen(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col"
             >
-              🏠 돌아가기
-            </button>
-          </div>
+              <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                <h3 className="text-2xl font-bold">🦁 동물 친구 선택하기</h3>
+                <button
+                  onClick={() => setIsAnimalModalOpen(false)}
+                  className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                {allAnimals.map((animal) => (
+                  <button
+                    key={animal.id}
+                    onClick={() => {
+                      setSelectedAnimal(animal);
+                      setIsAnimalModalOpen(false);
+                    }}
+                    className={`p-4 rounded-xl border-2 transition-all duration-200 hover:scale-105 ${selectedAnimal?.id === animal.id
+                      ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200'
+                      : 'border-gray-100 hover:border-purple-300 hover:shadow-md'
+                      }`}
+                  >
+                    <div className="text-5xl mb-2 text-center">{animal.emoji}</div>
+                    <div className="font-bold text-center text-gray-800">{animal.korean_name}</div>
+                    <div className="text-xs text-center text-gray-500 mt-1 truncate">{animal.name}</div>
+                  </button>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 헤더 */}
+      <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 shadow-lg rounded-b-3xl mb-6">
+        <div className="max-w-4xl mx-auto text-center">
+          <h1 className="text-3xl font-bold mb-2">🎮 캐릭터 만들기</h1>
+          <p className="text-purple-200">
+            나만의 캐릭터를 만들어보세요! ({existingCharacters.length}/3)
+          </p>
         </div>
-      </header>
+      </div>
 
       <div className="max-w-4xl mx-auto p-6">
         <motion.div
@@ -180,91 +257,91 @@ export default function CreateCharacterPage() {
                 1️⃣ 동물 선택
               </label>
               {selectedAnimal ? (
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-6">
+                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-6 relative group">
+                  <button
+                    type="button"
+                    onClick={() => setIsAnimalModalOpen(true)}
+                    className="absolute top-4 right-4 bg-white/50 hover:bg-white p-2 rounded-xl text-sm font-bold shadow-sm backdrop-blur transition-all opacity-0 group-hover:opacity-100"
+                  >
+                    🔄 변경하기
+                  </button>
                   <div className="text-center">
-                    <div className="text-6xl mb-2">{selectedAnimal.emoji}</div>
+                    <div className="text-6xl mb-2 animate-bounce-slow">{selectedAnimal.emoji}</div>
                     <h3 className="text-xl font-bold">{selectedAnimal.korean_name}</h3>
                     <p className="text-gray-600 mt-2">{selectedAnimal.description}</p>
                   </div>
-                  
-                  {/* 능력치 표시 */}
-                  <div className="mt-6 grid grid-cols-2 gap-3">
-                    <div className="bg-red-100 rounded-lg p-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-red-700">⚔️ 공격력</span>
-                        <span className="font-bold text-red-800">{selectedAnimal.attack_power}</span>
+
+                    {/* 능력치 표시 */}
+                    <div className="mt-6 grid grid-cols-2 gap-3">
+                      <div className="bg-red-100 rounded-lg p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-red-700">⚔️ 공격력</span>
+                          <span className="font-bold text-red-800">{selectedAnimal.power}</span>
+                        </div>
+                        <div className="w-full bg-red-200 rounded-full h-1.5 mt-1">
+                          <div
+                            className="bg-red-500 h-1.5 rounded-full"
+                            style={{ width: `${selectedAnimal.power}%` }}
+                          ></div>
+                        </div>
                       </div>
-                      <div className="w-full bg-red-200 rounded-full h-1.5 mt-1">
-                        <div 
-                          className="bg-red-500 h-1.5 rounded-full"
-                          style={{ width: `${selectedAnimal.attack_power}%` }}
-                        ></div>
+
+                      <div className="bg-orange-100 rounded-lg p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-orange-700">🛡️ 방어력</span>
+                          <span className="font-bold text-orange-800">{selectedAnimal.defense}</span>
+                        </div>
+                        <div className="w-full bg-orange-200 rounded-full h-1.5 mt-1">
+                          <div
+                            className="bg-orange-500 h-1.5 rounded-full"
+                            style={{ width: `${selectedAnimal.defense}%` }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div className="bg-blue-100 rounded-lg p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-blue-700">🏃 속도</span>
+                          <span className="font-bold text-blue-800">{selectedAnimal.speed}</span>
+                        </div>
+                        <div className="w-full bg-blue-200 rounded-full h-1.5 mt-1">
+                          <div
+                            className="bg-blue-500 h-1.5 rounded-full"
+                            style={{ width: `${selectedAnimal.speed}%` }}
+                          ></div>
+                        </div>
+                      </div>
+
+                      <div className="bg-green-100 rounded-lg p-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-green-700">🧠 지능</span>
+                          <span className="font-bold text-green-800">{selectedAnimal.intelligence}</span>
+                        </div>
+                        <div className="w-full bg-green-200 rounded-full h-1.5 mt-1">
+                          <div
+                            className="bg-green-500 h-1.5 rounded-full"
+                            style={{ width: `${selectedAnimal.intelligence}%` }}
+                          ></div>
+                        </div>
                       </div>
                     </div>
-                    
-                    <div className="bg-orange-100 rounded-lg p-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-orange-700">💪 힘</span>
-                        <span className="font-bold text-orange-800">{selectedAnimal.strength}</span>
-                      </div>
-                      <div className="w-full bg-orange-200 rounded-full h-1.5 mt-1">
-                        <div 
-                          className="bg-orange-500 h-1.5 rounded-full"
-                          style={{ width: `${selectedAnimal.strength}%` }}
-                        ></div>
-                      </div>
+
+                    <div className="mt-3 text-center text-sm">
+                      <span className="text-gray-600">총 능력치: </span>
+                      <span className="font-bold text-gray-800">
+                        {selectedAnimal.power + selectedAnimal.defense + selectedAnimal.speed + selectedAnimal.intelligence}
+                      </span>
                     </div>
-                    
-                    <div className="bg-blue-100 rounded-lg p-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-blue-700">🏃 속도</span>
-                        <span className="font-bold text-blue-800">{selectedAnimal.speed}</span>
-                      </div>
-                      <div className="w-full bg-blue-200 rounded-full h-1.5 mt-1">
-                        <div 
-                          className="bg-blue-500 h-1.5 rounded-full"
-                          style={{ width: `${selectedAnimal.speed}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                    
-                    <div className="bg-green-100 rounded-lg p-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-green-700">⚡ 에너지</span>
-                        <span className="font-bold text-green-800">{selectedAnimal.energy}</span>
-                      </div>
-                      <div className="w-full bg-green-200 rounded-full h-1.5 mt-1">
-                        <div 
-                          className="bg-green-500 h-1.5 rounded-full"
-                          style={{ width: `${selectedAnimal.energy}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-3 text-center text-sm">
-                    <span className="text-gray-600">총 능력치: </span>
-                    <span className="font-bold text-gray-800">
-                      {selectedAnimal.attack_power + selectedAnimal.strength + selectedAnimal.speed + selectedAnimal.energy}
-                    </span>
-                  </div>
-                  
-                  <button
-                    type="button"
-                    onClick={() => router.push('/animals')}
-                    className="mt-4 w-full text-purple-600 hover:text-purple-700 font-bold text-center"
-                  >
-                    다른 동물 선택하기 →
-                  </button>
                 </div>
               ) : (
                 <button
                   type="button"
-                  onClick={() => router.push('/animals')}
-                  className="w-full bg-gradient-to-r from-purple-100 to-pink-100 hover:from-purple-200 hover:to-pink-200 p-8 rounded-2xl transition-all duration-200"
+                  onClick={() => setIsAnimalModalOpen(true)}
+                  className="w-full bg-gradient-to-r from-purple-100 to-pink-100 hover:from-purple-200 hover:to-pink-200 p-8 rounded-2xl transition-all duration-200 border-2 border-dashed border-purple-200 hover:border-purple-300"
                 >
                   <div className="text-4xl mb-2">🦁</div>
-                  <p className="text-gray-700 font-bold">동물 도감에서 선택하기</p>
+                  <p className="text-gray-700 font-bold text-lg">눌러서 동물 선택하기</p>
+                  <p className="text-gray-400 text-sm mt-1">도감으로 이동하지 않고 바로 선택할 수 있어요!</p>
                 </button>
               )}
             </div>
@@ -299,18 +376,53 @@ export default function CreateCharacterPage() {
                 className="w-full p-4 border-2 border-gray-300 rounded-xl focus:border-purple-500 focus:outline-none resize-none h-32 text-lg"
                 required
               />
-              <div className="flex justify-between mt-2 text-sm">
-                <button
-                  type="button"
-                  onClick={() => router.push('/text-guide')}
-                  className="text-purple-600 hover:text-purple-700 font-bold"
-                >
-                  📝 작성 가이드 보기
-                </button>
-                <span className={`${
-                  battleText.length < 10 ? 'text-red-600' : 
+              <div className="flex justify-between mt-2 text-sm items-center">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => router.push('/text-guide')}
+                    className="text-purple-600 hover:text-purple-700 font-bold"
+                  >
+                    📝 작성 가이드
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!characterName || !selectedAnimal) {
+                        alert("먼저 동물과 이름을 정해주세요!");
+                        return;
+                      }
+                      try {
+                        setIsLoading(true);
+                        const res = await fetch('/api/ai/generate-text', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            animalName: selectedAnimal.korean_name,
+                            characterName: characterName
+                          })
+                        });
+                        const data = await res.json();
+                        if (data.success) {
+                          setBattleText(data.text);
+                        } else {
+                          alert("생성에 실패했어요 ㅠㅠ");
+                        }
+                      } catch (e) {
+                        console.error(e);
+                        alert("오류가 발생했어요.");
+                      } finally {
+                        setIsLoading(false);
+                      }
+                    }}
+                    className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1 rounded-lg font-bold transition-colors flex items-center gap-1"
+                  >
+                    ✨ AI로 자동 생성
+                  </button>
+                </div>
+                <span className={`${battleText.length < 10 ? 'text-red-600' :
                   battleText.length > 100 ? 'text-red-600' : 'text-green-600'
-                }`}>
+                  }`}>
                   {battleText.length}/100자
                 </span>
               </div>

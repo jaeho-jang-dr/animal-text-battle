@@ -29,43 +29,69 @@
 ## 📋 주요 변경사항
 
 ### 데이터베이스 쿼리
+
 - **이전**: `db.prepare().get()` (동기)
 - **이후**: `await db.prepare().get()` (비동기)
 
 ### 데이터 타입
+
 - **TEXT** → UUID (id 필드)
 - **INTEGER** → BOOLEAN
 - **AUTOINCREMENT** → SERIAL
 - **datetime()** → TIMESTAMP 함수
 
 ### 플레이스홀더
+
 - SQLite `?` → 자동으로 PostgreSQL `$n`으로 변환
 
 ## 🚀 배포 단계
 
 1. **Neon.tech 계정 생성**
+
    ```
    https://neon.tech
    ```
 
 2. **데이터베이스 생성 후 연결 문자열 복사**
+
    ```
    postgresql://username:password@host/database?sslmode=require
    ```
 
 3. **환경 변수 설정**
+
    ```bash
    # .env.local
-   DATABASE_URL=your-postgres-url
-   OPENAI_API_KEY=your-openai-key
-   ```
+   # Firebase Configuration
 
-4. **데이터베이스 초기화**
+NEXT_PUBLIC_FIREBASE_API_KEY="AIzaSyC4nvXOBEOV-cfzAG8DJhWhcQpj6g94dAs"
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="animal-text-battle.firebaseapp.com"
+NEXT_PUBLIC_FIREBASE_PROJECT_ID="animal-text-battle"
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="animal-text-battle.firebasestorage.app"
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="243991790292"
+NEXT_PUBLIC_FIREBASE_APP_ID="1:243991790292:web:c9caa2e206f21a749bb141"
+FIREBASE_SERVICE_ACCOUNT={
+  "type": "service_account",
+  "project_id": "animal-text-battle",
+  "private_key_id": "YOUR_PRIVATE_KEY_ID_HERE",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n",
+  "client_email": "<firebase-adminsdk-fbsvc@animal-text-battle.iam.gserviceaccount.com>",
+  "client_id": "YOUR_CLIENT_ID_HERE",
+  "auth_uri": "<https://accounts.google.com/o/oauth2/auth>",
+  "token_uri": "<https://oauth2.googleapis.com/token>",
+  "auth_provider_x509_cert_url": "<https://www.googleapis.com/oauth2/v1/certs>",
+  "client_x509_cert_url": "YOUR_CERT_URL_HERE",
+  "universe_domain": "googleapis.com"
+}
+
+1. **데이터베이스 초기화**
+
    ```bash
    npm run db:init
    ```
 
-5. **Vercel 배포**
+2. **Vercel 배포**
+
    ```bash
    vercel --prod
    ```

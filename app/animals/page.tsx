@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../../contexts/AuthContext';
 
 interface Animal {
   id: number;
@@ -22,49 +23,20 @@ interface Animal {
 
 export default function AnimalsPage() {
   const router = useRouter();
+  const { user } = useAuth();
+
   const [animals, setAnimals] = useState<Animal[]>([]);
   const [selectedAnimal, setSelectedAnimal] = useState<Animal | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [stats, setStats] = useState<any>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     fetchAnimals();
-    checkUserStatus();
   }, []);
 
-  const checkUserStatus = async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setIsLoggedIn(false);
-      setIsAdmin(false);
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/admin/verify', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      const data = await response.json();
-      if (data.success) {
-        setIsLoggedIn(true);
-        setIsAdmin(data.data.isAdmin);
-      } else {
-        setIsLoggedIn(false);
-        setIsAdmin(false);
-      }
-    } catch (error) {
-      console.error('Failed to verify user status:', error);
-      setIsLoggedIn(false);
-      setIsAdmin(false);
-    }
-  };
+  const isLoggedIn = !!user;
 
   const fetchAnimals = async () => {
     try {
@@ -83,7 +55,7 @@ export default function AnimalsPage() {
 
   const filteredAnimals = animals.filter(animal => {
     const matchesCategory = selectedCategory === 'all' || animal.category === selectedCategory;
-    const matchesSearch = searchTerm === '' || 
+    const matchesSearch = searchTerm === '' ||
       animal.korean_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       animal.name.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesCategory && matchesSearch;
@@ -110,22 +82,12 @@ export default function AnimalsPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100">
       {/* 헤더 */}
-      <header className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 shadow-lg">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold mb-2">🦁 동물 도감</h1>
-              <p className="text-purple-200">다양한 동물들을 만나보세요!</p>
-            </div>
-            <button
-              onClick={() => router.push('/')}
-              className="bg-white/20 hover:bg-white/30 backdrop-blur px-6 py-3 rounded-xl font-bold transition-all duration-200 transform hover:scale-105"
-            >
-              🏠 홈으로 돌아가기
-            </button>
-          </div>
+      <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 shadow-lg rounded-b-3xl mb-6">
+        <div className="max-w-7xl mx-auto text-center">
+          <h1 className="text-3xl font-bold mb-2">🦁 동물 도감</h1>
+          <p className="text-purple-200">다양한 동물들을 만나보세요!</p>
         </div>
-      </header>
+      </div>
 
       <div className="max-w-7xl mx-auto p-6">
         {/* 검색 바 */}
@@ -150,16 +112,15 @@ export default function AnimalsPage() {
             </p>
           </div>
         )}
-        
+
         {/* 카테고리 필터 */}
         <div className="flex flex-wrap justify-center gap-4 mb-8">
           <button
             onClick={() => setSelectedCategory('all')}
-            className={`px-6 py-3 rounded-full font-bold transition-all duration-200 transform hover:scale-105 ${
-              selectedCategory === 'all'
-                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
-                : 'bg-white text-gray-700 hover:bg-gray-100'
-            }`}
+            className={`px-6 py-3 rounded-full font-bold transition-all duration-200 transform hover:scale-105 ${selectedCategory === 'all'
+              ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              }`}
           >
             전체 보기
           </button>
@@ -167,11 +128,10 @@ export default function AnimalsPage() {
             <button
               key={category}
               onClick={() => setSelectedCategory(category)}
-              className={`px-6 py-3 rounded-full font-bold transition-all duration-200 transform hover:scale-105 ${
-                selectedCategory === category
-                  ? `bg-gradient-to-r ${getCategoryColor(category)} text-white shadow-lg`
-                  : 'bg-white text-gray-700 hover:bg-gray-100'
-              }`}
+              className={`px-6 py-3 rounded-full font-bold transition-all duration-200 transform hover:scale-105 ${selectedCategory === category
+                ? `bg-gradient-to-r ${getCategoryColor(category)} text-white shadow-lg`
+                : 'bg-white text-gray-700 hover:bg-gray-100'
+                }`}
             >
               <span>{getCategoryName(category)}</span>
               {stats && (
@@ -195,7 +155,7 @@ export default function AnimalsPage() {
             <p className="text-gray-600">검색 결과가 없어요...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-6">
             {filteredAnimals.map((animal, index) => (
               <motion.div
                 key={animal.id}
@@ -205,7 +165,7 @@ export default function AnimalsPage() {
                 whileHover={{ scale: 1.1, zIndex: 10 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => setSelectedAnimal(animal)}
-                className="bg-white rounded-xl shadow-md p-4 cursor-pointer hover:shadow-xl transition-all duration-200 relative"
+                className="bg-white rounded-xl shadow-md p-6 cursor-pointer hover:shadow-xl transition-all duration-200 relative"
                 style={{
                   backgroundColor: animal.color ? `${animal.color}15` : 'white',
                   borderColor: animal.color || '#e5e7eb',
@@ -288,53 +248,53 @@ export default function AnimalsPage() {
                         <span className="font-bold text-red-800">{selectedAnimal.attack_power}</span>
                       </div>
                       <div className="w-full bg-red-200 rounded-full h-2.5">
-                        <div 
+                        <div
                           className="bg-red-500 h-2.5 rounded-full transition-all duration-500"
                           style={{ width: `${selectedAnimal.attack_power}%` }}
                         ></div>
                       </div>
                     </div>
-                    
+
                     <div className="bg-orange-50 rounded-lg p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium text-orange-700">💪 힘</span>
                         <span className="font-bold text-orange-800">{selectedAnimal.strength}</span>
                       </div>
                       <div className="w-full bg-orange-200 rounded-full h-2.5">
-                        <div 
+                        <div
                           className="bg-orange-500 h-2.5 rounded-full transition-all duration-500"
                           style={{ width: `${selectedAnimal.strength}%` }}
                         ></div>
                       </div>
                     </div>
-                    
+
                     <div className="bg-blue-50 rounded-lg p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium text-blue-700">🏃 속도</span>
                         <span className="font-bold text-blue-800">{selectedAnimal.speed}</span>
                       </div>
                       <div className="w-full bg-blue-200 rounded-full h-2.5">
-                        <div 
+                        <div
                           className="bg-blue-500 h-2.5 rounded-full transition-all duration-500"
                           style={{ width: `${selectedAnimal.speed}%` }}
                         ></div>
                       </div>
                     </div>
-                    
+
                     <div className="bg-green-50 rounded-lg p-4">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium text-green-700">⚡ 에너지</span>
                         <span className="font-bold text-green-800">{selectedAnimal.energy}</span>
                       </div>
                       <div className="w-full bg-green-200 rounded-full h-2.5">
-                        <div 
+                        <div
                           className="bg-green-500 h-2.5 rounded-full transition-all duration-500"
                           style={{ width: `${selectedAnimal.energy}%` }}
                         ></div>
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="mt-4 text-center p-3 bg-gray-100 rounded-lg">
                     <span className="text-sm text-gray-600">총 능력치: </span>
                     <span className="font-bold text-gray-800">
@@ -351,29 +311,22 @@ export default function AnimalsPage() {
                         onClick={() => {
                           router.push(`/create-character?animal=${selectedAnimal.id}`);
                         }}
-                        className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-8 rounded-full shadow-lg transition-all duration-200 transform hover:scale-110 flex items-center justify-center gap-2 mx-auto"
                       >
-                        🎮 캐릭터 만들기
+                        ✅ 이 동물로 시작하기
                       </button>
-                      {isAdmin && (
-                        <button
-                          onClick={() => {
-                            router.push(`/create-animal?animal=${selectedAnimal.id}`);
-                          }}
-                          className="flex-1 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
-                        >
-                          🦄 나만의 동물 만들기 (관리자)
-                        </button>
-                      )}
                     </div>
                   ) : (
                     <div className="text-center mb-4">
-                      <p className="text-gray-600 mb-4">캐릭터를 만들려면 로그인이 필요해요!</p>
                       <button
-                        onClick={() => router.push('/')}
-                        className="bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
+                        onClick={() => {
+                          // Save redirection intention
+                          localStorage.setItem('auth_redirect', `/create-character?animal=${selectedAnimal.id}`);
+                          router.push('/');
+                        }}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-4 px-8 rounded-full shadow-lg transition-all duration-200 transform hover:scale-110 flex items-center justify-center gap-2 mx-auto"
                       >
-                        🏠 로그인하러 가기
+                        ✅ 이 동물로 시작하기
                       </button>
                     </div>
                   )}

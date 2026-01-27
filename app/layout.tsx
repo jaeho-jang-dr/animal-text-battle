@@ -1,10 +1,21 @@
 import type { Metadata } from "next";
+import { Nunito } from "next/font/google";
+import "./globals.css";
 import AdminButton from "../components/AdminButton";
+import Header from "../components/Header";
 import { AuthProvider } from "../contexts/AuthContext";
 
+const nunito = Nunito({
+  subsets: ["latin"],
+  variable: '--font-nunito',
+  display: 'swap',
+});
+
 export const metadata: Metadata = {
-  title: "Kid Text Battle",
-  description: "동물 데이터베이스 프로젝트",
+  title: "동물 텍스트 배틀 🦁",
+  description: "나만의 동물 캐릭터로 펼치는 즐거운 상상력 대결!",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0",
+  themeColor: "#4ade80",
 };
 
 export default function RootLayout({
@@ -13,24 +24,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko">
-      <head>
-        <style>{`
-          * {
-            box-sizing: border-box;
-            padding: 0;
-            margin: 0;
-          }
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            min-height: 100vh;
-          }
-        `}</style>
-      </head>
-      <body suppressHydrationWarning>
+    <html lang="ko" className={nunito.variable}>
+      <body className="font-sans min-h-screen bg-[#F0F4F8] text-slate-800 antialiased selection:bg-green-200 selection:text-green-900" suppressHydrationWarning>
         <AuthProvider>
-          {children}
-          <AdminButton />
+          <div className="relative min-h-screen flex flex-col">
+            <Header />
+            <main className="flex-1 w-full">
+              {children}
+            </main>
+            <AdminButton />
+          </div>
+
+          {/* Desktop Background Decoration - Optional, keeping it subtle or removing if it conflicts */}
+          {/* <div className="fixed inset-0 -z-10 hidden min-[450px]:block bg-gradient-to-br from-indigo-100 via-purple-50 to-pink-100 pointer-events-none">...</div> */}
         </AuthProvider>
       </body>
     </html>

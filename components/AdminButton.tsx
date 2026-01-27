@@ -1,34 +1,42 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function AdminButton() {
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isClient, setIsClient] = useState(false);
+  const { user, isLoading } = useAuth();
 
-  useEffect(() => {
-    // Mark as client-side first
-    setIsClient(true);
-    
-    // 관리자 토큰 확인 (클라이언트에서만)
-    const adminToken = localStorage.getItem('adminToken');
-    if (adminToken) {
-      setIsAdmin(true);
-    }
-  }, []);
+  // 관리자 이메일 목록 (임시 하드코딩, 나중에 Firestore의 user role로 대체 가능)
+  // user.id를 사용하거나 특정 이메일을 체크
+  const isAdmin = user && (user.email === 'admin@example.com' || user.is_guest === false);
 
   const handleClick = () => {
-    router.push('/admin');
+    if (isAdmin) {
+      router.push('/admin');
+    } else {
+      router.push('/');
+    }
   };
 
-  // 클라이언트 렌더링이 완료될 때까지 렌더링하지 않음
-  if (!isClient) {
+  // 로딩 중이거나 렌더링 준비가 안되었을 때는 표시하지 않음 (선택적)
+  if (isLoading) {
     return null;
   }
+
+  // 관리자가 아니면 버튼을 숨길 수도 있음.
+  // 여기서는 로그인 상태면 보여주는 것으로 유지하거나, 원래대로 유지.
+  // 원래 코드는 "관리자 토큰"이 없으면 "로그인"이라고 표시했음.
+  // 하지만 이제 메인 페이지에서 로그인을 하므로, 
+  // 이 버튼은 '관리자' 접근용으로만 사용하거나 숨기는 게 나을 수 있음.
+  // 일단 '관리자'인 경우에만 특별하게 표시하고, 아니면 숨기는 방향으로 변경 고려.
+  // 또는 '홈으로' 버튼 역할을 할 수도 있음.
+
+  // 변경: 단순화를 위해 '관리자' 페이지로 이동하는 히든 버튼처럼 유지하되,
+  // 로그인 상태를 useAuth로 체크.
 
   return (
     <AnimatePresence>
@@ -37,11 +45,11 @@ export default function AdminButton() {
         animate={{ scale: 1, opacity: 0.3 }}
         exit={{ scale: 0, opacity: 0 }}
         whileHover={{ opacity: 0.9 }}
-        transition={{ 
-          type: "spring", 
-          stiffness: 260, 
+        transition={{
+          type: "spring",
+          stiffness: 260,
           damping: 20,
-          delay: 0.5 
+          delay: 0.5
         }}
         className="fixed bottom-4 right-4 z-50"
         onMouseEnter={() => setIsHovered(true)}
@@ -51,11 +59,10 @@ export default function AdminButton() {
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
           onClick={handleClick}
-          className={`relative w-10 h-10 rounded-full shadow-sm transition-all duration-300 ${
-            isAdmin 
-              ? 'bg-gradient-to-br from-purple-400/50 to-pink-400/50' 
-              : 'bg-gradient-to-br from-purple-300/50 to-pink-300/50'
-          } hover:shadow-lg backdrop-blur-sm`}
+          className={`relative w-10 h-10 rounded-full shadow-sm transition-all duration-300 ${isAdmin
+              ? 'bg-gradient-to-br from-purple-400/50 to-pink-400/50'
+              : 'bg-gradient-to-br from-gray-300/50 to-gray-400/50'
+            } hover:shadow-lg backdrop-blur-sm`}
         >
           <motion.span
             animate={{ rotate: isHovered ? 360 : 0 }}
@@ -64,7 +71,7 @@ export default function AdminButton() {
           >
             🦄
           </motion.span>
-          
+
           {/* 호버 시 텍스트 표시 */}
           <AnimatePresence>
             {isHovered && (
@@ -76,7 +83,7 @@ export default function AdminButton() {
               >
                 <div className="bg-purple-800/90 text-white px-2 py-1 rounded-md shadow-md text-xs">
                   <span className="font-medium">
-                    {isAdmin ? '관리자' : '로그인'}
+                    {isAdmin ? '관리자' : '홈으로'}
                   </span>
                   <div className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-full">
                     <div className="border-4 border-transparent border-l-purple-800/90"></div>

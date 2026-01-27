@@ -1,9 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { User, Character } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import BattlePreparation from '../../components/BattlePreparation';
+import BottomNav from '../../components/BottomNav';
 
 interface LeaderboardEntry {
   rank: number;
@@ -36,11 +39,15 @@ interface BattleMode {
 }
 
 export default function LeaderboardPage() {
+  const searchParams = useSearchParams();
+  const attackerId = searchParams.get('attackerId');
+  const [attackerCharacter, setAttackerCharacter] = useState<Character | null>(null);
+
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [category, setCategory] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<'score' | 'elo' | 'base'>('base');
-  const [user, setUser] = useState<User | null>(null);
+  const [sortBy, setSortBy] = useState<'score' | 'elo' | 'base' | 'wins' | 'totalBattles'>('base');
+  const { user, firebaseUser } = useAuth();
   const [myCharacters, setMyCharacters] = useState<Character[]>([]);
   const [showCharacterSelect, setShowCharacterSelect] = useState(false);
   const [selectedOpponent, setSelectedOpponent] = useState<LeaderboardEntry | null>(null);
@@ -52,31 +59,35 @@ export default function LeaderboardPage() {
     isBattling: false
   });
   const [dailyBattleLimit, setDailyBattleLimit] = useState(10);
+  const [showBots, setShowBots] = useState(false);
 
   useEffect(() => {
-    checkAuth();
+    if (attackerId) {
+      fetchCharacterDetails(attackerId).then(data => {
+        if (data) {
+          setAttackerCharacter(data);
+          // If we have an attacker, we might want to ensure we are logged in or at least have the character context
+          // But for now just setting it for display and action is enough
+        }
+      });
+    }
+  }, [attackerId]);
+
+  useEffect(() => {
     fetchLeaderboard();
     loadBattleLimit();
   }, [category, sortBy]);
 
-  const checkAuth = async () => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      try {
-        const response = await fetch('/api/auth/verify', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        const data = await response.json();
-        if (data.success) {
-          setUser(data.data.user);
-          setMyCharacters(data.data.user.characters || []);
-        }
-      } catch (error) {
-        console.error('Auth check error:', error);
-      }
+  useEffect(() => {
+    if (user?.id) {
+      fetch(`/api/characters?userId=${user.id}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) setMyCharacters(data.data);
+        })
+        .catch(err => console.error(err));
     }
-  };
+  }, [user]);
 
   const fetchLeaderboard = async () => {
     try {
@@ -88,11 +99,11 @@ export default function LeaderboardPage() {
       console.log('📋 Fetching leaderboard...', `/api/leaderboard?${params}`);
       const response = await fetch(`/api/leaderboard?${params}`);
       console.log('🔄 Response status:', response.status);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const data = await response.json();
       console.log('📦 Leaderboard data:', data);
 
@@ -140,6 +151,24 @@ export default function LeaderboardPage() {
   };
 
   const startBattle = async (opponent: LeaderboardEntry) => {
+    // Battle Mode: Direct battle with pre-selected attacker
+    if (attackerId && attackerCharacter) {
+      if (attackerCharacter.id === opponent.id) {
+        alert('자기 자신과는 싸울 수 없어요!');
+        return;
+      }
+
+      // 상대 캐릭터의 상세 정보 가져오기
+      const opponentDetails = await fetchCharacterDetails(opponent.id);
+      if (opponentDetails) {
+        opponent.battleText = opponentDetails.battleText;
+        opponent.animal = opponentDetails.animal;
+      }
+
+      selectCharacterForBattle(attackerCharacter, opponent);
+      return;
+    }
+
     if (!user) {
       alert('배틀하려면 로그인이 필요해요!');
       window.location.href = '/';
@@ -163,9 +192,12 @@ export default function LeaderboardPage() {
     setShowCharacterSelect(true);
   };
 
-  const selectCharacterForBattle = async (character: Character) => {
+  const selectCharacterForBattle = async (character: Character, directOpponent?: LeaderboardEntry) => {
+    const opponent = directOpponent || selectedOpponent;
+    if (!opponent) return;
+
     // 봇과의 배틀은 일일 제한 없음
-    if (!selectedOpponent?.isBot && character.activeBattlesToday >= dailyBattleLimit) {
+    if (!opponent.isBot && character.activeBattlesToday >= dailyBattleLimit) {
       alert(`이 캐릭터는 오늘 배틀을 모두 마쳤어요! (${dailyBattleLimit}회)\n🤖 대기 계정과는 무제한 배틀이 가능해요!`);
       return;
     }
@@ -180,7 +212,7 @@ export default function LeaderboardPage() {
     setBattleMode({
       isActive: true,
       myCharacter: character,
-      opponent: selectedOpponent,
+      opponent: opponent,
       result: null,
       isBattling: false
     });
@@ -193,7 +225,7 @@ export default function LeaderboardPage() {
     setBattleMode(prev => ({ ...prev, isBattling: true }));
 
     try {
-      const token = localStorage.getItem('token');
+      const token = await firebaseUser?.getIdToken();
       const response = await fetch('/api/battles', {
         method: 'POST',
         headers: {
@@ -207,7 +239,7 @@ export default function LeaderboardPage() {
       });
 
       const data = await response.json();
-      
+
       if (data.success) {
         setBattleMode(prev => ({
           ...prev,
@@ -281,23 +313,43 @@ export default function LeaderboardPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100">
-      {/* 헤더 */}
-      <header className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 shadow-lg">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold mb-2">🏆 명예의 전당</h1>
-              <p className="text-purple-200">최강의 동물 전사들이 모인 곳!</p>
-            </div>
-            <button
-              onClick={() => window.location.href = '/'}
-              className="bg-white/20 hover:bg-white/30 backdrop-blur px-6 py-3 rounded-xl font-bold transition-all duration-200 transform hover:scale-105"
-            >
-              🏠 홈으로 돌아가기
-            </button>
-          </div>
+      {/* 헤더 - Adjusted */}
+      <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 shadow-lg rounded-b-3xl mb-6">
+        <div className="max-w-7xl mx-auto text-center">
+          <h1 className="text-3xl font-bold mb-2">🏆 명예의 전당</h1>
+          <p className="text-purple-200">최강의 동물 전사들이 모인 곳!</p>
         </div>
-      </header>
+      </div>
+
+      {/* Battle Mode Banner */}
+      {attackerCharacter && (
+        <div className="max-w-7xl mx-auto px-6 mb-6">
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 rounded-2xl shadow-lg flex items-center justify-between"
+          >
+            <div className="flex items-center gap-4">
+              <div className="text-4xl bg-white/20 p-2 rounded-xl">
+                {attackerCharacter.animal?.emoji || '🐾'}
+              </div>
+              <div>
+                <p className="text-blue-100 text-sm font-bold uppercase tracking-wider">Currently Playing As</p>
+                <h2 className="text-2xl font-bold">{attackerCharacter.characterName}</h2>
+                <p className="text-blue-100 text-sm">
+                  {attackerCharacter.animal?.koreanName} | ELO: {attackerCharacter.eloScore} | {attackerCharacter.wins}승 {attackerCharacter.losses}패
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => window.location.href = '/play'}
+              className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+            >
+              캐릭터 변경
+            </button>
+          </motion.div>
+        </div>
+      )}
 
       <div className="max-w-7xl mx-auto p-6">
         {/* 점수 계산법 설명 */}
@@ -341,38 +393,68 @@ export default function LeaderboardPage() {
           </div>
         </motion.div>
 
-        {/* 필터 옵션 */}
-        <div className="bg-white rounded-3xl shadow-xl p-6 mb-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            {/* 카테고리 필터 */}
-            <div className="flex items-center gap-2">
-              <label className="font-bold text-gray-700">카테고리:</label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
-              >
-                <option value="all">🌍 전체</option>
-                <option value="current">🦁 현존 동물</option>
-                <option value="mythical">🦄 전설의 동물</option>
-                <option value="prehistoric">🦕 고생대 동물</option>
-              </select>
-            </div>
+        {/* 메인 탭 (랭킹 vs 훈련소) */}
+        <div className="flex justify-center mb-8 gap-4">
+          <button
+            onClick={() => setCategory('all')} // Reset category when switching tab usually, but here we repurpose or use separate state
+            className={`px-8 py-4 rounded-2xl font-bold text-xl transition-all shadow-lg flex items-center gap-2 ${!showBots
+              ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white scale-105 ring-4 ring-yellow-200'
+              : 'bg-white text-gray-500 hover:bg-gray-50'
+              }`}
+            onClickCapture={() => setShowBots(false)}
+          >
+            <span>🏆</span>
+            <span>전체 랭킹</span>
+          </button>
+          <button
+            onClick={() => setCategory('all')}
+            className={`px-8 py-4 rounded-2xl font-bold text-xl transition-all shadow-lg flex items-center gap-2 ${showBots
+              ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white scale-105 ring-4 ring-purple-200'
+              : 'bg-white text-gray-500 hover:bg-gray-50'
+              }`}
+            onClickCapture={() => setShowBots(true)}
+          >
+            <span>🤖</span>
+            <span>NPC 훈련소</span>
+          </button>
+        </div>
 
-            {/* 정렬 옵션 */}
-            <div className="flex items-center gap-2">
-              <label className="font-bold text-gray-700">정렬:</label>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'score' | 'elo')}
-                className="px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
-              >
-                <option value="base">📊 기본 점수</option>
-                <option value="elo">🎯 실력 점수</option>
-              </select>
+        {/* 필터 옵션 (봇 화면에서는 숨기기) */}
+        {!showBots && (
+          <div className="bg-white rounded-3xl shadow-xl p-6 mb-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              {/* 카테고리 필터 */}
+              <div className="flex items-center gap-2">
+                <label className="font-bold text-gray-700">카테고리:</label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  className="px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+                >
+                  <option value="all">🌍 전체</option>
+                  <option value="current">🦁 현존 동물</option>
+                  <option value="mythical">🦄 전설의 동물</option>
+                  <option value="prehistoric">🦕 고생대 동물</option>
+                </select>
+              </div>
+
+              {/* 정렬 옵션 */}
+              <div className="flex items-center gap-2">
+                <label className="font-bold text-gray-700">정렬:</label>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="px-4 py-2 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-purple-500"
+                >
+                  <option value="base">📊 기본 점수</option>
+                  <option value="elo">🎯 실력 점수</option>
+                  <option value="wins">🏆 최다 승리</option>
+                  <option value="totalBattles">⚔️ 최다 배틀</option>
+                </select>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* 리더보드 테이블 */}
         {isLoading ? (
@@ -396,83 +478,88 @@ export default function LeaderboardPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {entries.map((entry) => (
-                    <tr 
-                      key={entry.id} 
-                      className={`border-b-2 ${getRankColor(entry.rank)} hover:bg-opacity-70 transition-colors ${
-                        user && entry.userId === user.id ? 'ring-2 ring-blue-400' : ''
-                      }`}
-                    >
-                      <td className="px-4 py-4">
-                        <div className="text-2xl font-bold">
-                          {getRankEmoji(entry.rank)}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="font-bold text-lg">
-                          {entry.characterName}
-                          {entry.isBot && (
-                            <span className="ml-2 text-sm bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
-                              🤖 AI
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {entry.playerName || '익명의 전사'}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-2">
-                          <span className="text-2xl">{entry.animalIcon}</span>
-                          <span>{entry.animalName}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-center">
-                        <div className="font-bold text-lg">
-                          {sortBy === 'base' || sortBy === 'score' ? entry.baseScore : entry.eloScore}
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          {sortBy === 'base' || sortBy === 'score' ? `ELO: ${entry.eloScore}` : `기본: ${entry.baseScore}`}
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-center">
-                        <div className="font-bold text-lg">
-                          {entry.winRate}%
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-center">
-                        <div className="text-sm">
-                          <span className="text-green-600 font-bold">{entry.wins}승</span>
-                          {' / '}
-                          <span className="text-red-600 font-bold">{entry.losses}패</span>
-                        </div>
-                        <div className="text-xs text-gray-600">
-                          총 {entry.totalBattles}전
-                        </div>
-                      </td>
-                      <td className="px-4 py-4 text-center">
-                        {user && entry.userId === user.id ? (
-                          <div className="text-sm text-gray-500 font-medium">
-                            나의 캐릭터
+                  {entries
+                    .filter(e => showBots ? e.isBot : !e.isBot)
+                    .map((entry) => (
+                      <tr
+                        key={entry.id}
+                        className={`border-b-2 ${getRankColor(entry.rank)} hover:bg-opacity-70 transition-colors ${user && entry.userId === user.id ? 'ring-2 ring-blue-400' : ''
+                          }`}
+                      >
+                        <td className="px-4 py-4">
+                          <div className="text-2xl font-bold">
+                            {getRankEmoji(entry.rank)}
                           </div>
-                        ) : (
-                          <div className="flex flex-col items-center gap-1">
-                            <motion.button
-                              whileHover={{ scale: 1.05 }}
-                              whileTap={{ scale: 0.95 }}
-                              onClick={() => startBattle(entry)}
-                              className="bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600 text-white font-bold py-2 px-4 rounded-lg text-sm transition-all duration-200 shadow-lg hover:shadow-xl"
-                            >
-                              ⚔️ 도전!
-                            </motion.button>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="font-bold text-lg">
+                            {entry.characterName}
                             {entry.isBot && (
-                              <span className="text-xs text-purple-600">무제한</span>
+                              <span className="ml-2 text-sm bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
+                                🤖 AI
+                              </span>
                             )}
                           </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                          <div className="text-sm text-gray-600">
+                            {entry.playerName || '익명의 전사'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="text-2xl">{entry.animalIcon}</span>
+                            <span>{entry.animalName}</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="font-bold text-lg">
+                            {sortBy === 'base' || sortBy === 'score' ? entry.baseScore : entry.eloScore}
+                          </div>
+                          <div className="text-sm text-gray-600">
+                            {sortBy === 'base' || sortBy === 'score' ? `ELO: ${entry.eloScore}` : `기본: ${entry.baseScore}`}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="font-bold text-lg">
+                            {entry.winRate}%
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <div className="text-sm">
+                            <span className="text-green-600 font-bold">{entry.wins}승</span>
+                            {' / '}
+                            <span className="text-red-600 font-bold">{entry.losses}패</span>
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            총 {entry.totalBattles}전
+                          </div>
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          {user && entry.userId === user.id ? (
+                            <div className="text-sm text-gray-500 font-medium">
+                              나의 캐릭터
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-1">
+                              <motion.button
+                                whileHover={{ scale: 1.05 }}
+                                whileTap={{ scale: 0.95 }}
+                                onClick={() => startBattle(entry)}
+                                className={`${
+                                  attackerId && attackerCharacter 
+                                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600' 
+                                    : 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600'
+                                } text-white font-bold py-2 px-4 rounded-lg text-sm transition-all duration-200 shadow-lg hover:shadow-xl`}
+                              >
+                                {attackerId && attackerCharacter ? '⚔️ 바로 배틀!' : '⚔️ 도전!'}
+                              </motion.button>
+                              {entry.isBot && (
+                                <span className="text-xs text-purple-600">무제한</span>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -517,7 +604,7 @@ export default function LeaderboardPage() {
             <h2 className="text-2xl font-bold text-center mb-6">
               어떤 캐릭터로 도전할까요? 🤔
             </h2>
-            
+
             <div className="mb-4 text-center">
               <p className="text-lg">
                 상대: <span className="font-bold">{selectedOpponent.characterName}</span>
@@ -544,11 +631,10 @@ export default function LeaderboardPage() {
                   key={character.id}
                   onClick={() => selectCharacterForBattle(character)}
                   disabled={!selectedOpponent?.isBot && character.activeBattlesToday >= dailyBattleLimit}
-                  className={`p-4 rounded-xl border-2 transition-all ${
-                    !selectedOpponent?.isBot && character.activeBattlesToday >= dailyBattleLimit
-                      ? 'bg-gray-100 border-gray-300 cursor-not-allowed opacity-50'
-                      : 'bg-white border-blue-400 hover:bg-blue-50 hover:border-blue-600'
-                  }`}
+                  className={`p-4 rounded-xl border-2 transition-all ${!selectedOpponent?.isBot && character.activeBattlesToday >= dailyBattleLimit
+                    ? 'bg-gray-100 border-gray-300 cursor-not-allowed opacity-50'
+                    : 'bg-white border-blue-400 hover:bg-blue-50 hover:border-blue-600'
+                    }`}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -608,26 +694,24 @@ export default function LeaderboardPage() {
                 <h2 className="text-3xl font-bold text-center mb-6">
                   {battleMode.result.result.winner === 'attacker' ? '🎉 승리!' : '😢 패배...'}
                 </h2>
-                
+
                 <div className="bg-blue-50 rounded-xl p-6 mb-6">
                   <p className="text-xl font-bold mb-2">{battleMode.result.result.judgment}</p>
                   <p className="text-gray-700 mb-4">{battleMode.result.result.reasoning}</p>
-                  
+
                   <div className="grid grid-cols-2 gap-4 mb-4">
                     <div className="text-center">
                       <p className="text-sm text-gray-600">내 점수 변화</p>
-                      <p className={`text-2xl font-bold ${
-                        battleMode.result.result.attackerScoreChange > 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
+                      <p className={`text-2xl font-bold ${battleMode.result.result.attackerScoreChange > 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
                         {battleMode.result.result.attackerScoreChange > 0 ? '+' : ''}
                         {battleMode.result.result.attackerScoreChange}
                       </p>
                     </div>
                     <div className="text-center">
                       <p className="text-sm text-gray-600">ELO 변화</p>
-                      <p className={`text-2xl font-bold ${
-                        battleMode.result.result.attackerEloChange > 0 ? 'text-green-600' : 'text-red-600'
-                      }`}>
+                      <p className={`text-2xl font-bold ${battleMode.result.result.attackerEloChange > 0 ? 'text-green-600' : 'text-red-600'
+                        }`}>
                         {battleMode.result.result.attackerEloChange > 0 ? '+' : ''}
                         {battleMode.result.result.attackerEloChange}
                       </p>

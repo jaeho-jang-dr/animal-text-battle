@@ -2,144 +2,157 @@
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { User } from '../types';
+import {
+  User as FirebaseUser,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  signInWithPopup,
+  GoogleAuthProvider,
+  signInAnonymously,
+  setPersistence,
+  browserLocalPersistence
+} from 'firebase/auth';
+import { auth, db } from '../lib/firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { User } from '../types'; // Keep existing type for app compatibility, but map from Firebase
 
 interface AuthContextType {
-  user: User | null;
+  user: User | null; // App's User type
+  firebaseUser: FirebaseUser | null; // Raw Firebase User
   isLoading: boolean;
-  isAuthenticated: boolean;
-  login: (token: string, user: User) => void;
-  guestLogin: () => Promise<boolean>;
-  logout: () => void;
-  updateUser: (user: User) => void;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  signupWithEmail: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  guestLogin: () => Promise<void>;
+  logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isClient, setIsClient] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
-  // 공개 경로 (로그인 없이 접근 가능)
+  // Public paths
   const publicPaths = ['/', '/animals', '/leaderboard', '/text-guide'];
   const authRequiredPaths = ['/play', '/create-character'];
 
   useEffect(() => {
-    // Mark as client-side and then run authentication check
-    setIsClient(true);
-    checkAuth();
+    // Enable offline persistence
+    setPersistence(auth, browserLocalPersistence)
+      .catch((error) => {
+        console.error("Auth persistence error:", error);
+      });
+
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
+
+      if (fbUser) {
+        // Optimistic UI: Set user immediately with basic info
+        const baseUser: User = {
+          id: fbUser.uid,
+          email: fbUser.email || undefined,
+          display_name: fbUser.displayName || `User_${fbUser.uid.slice(0, 5)}`,
+          is_guest: fbUser.isAnonymous,
+          created_at: new Date().toISOString(),
+          token_expires_at: '',
+          login_token: ''
+        };
+
+        // Unblock UI immediately
+        setUser(baseUser);
+        setIsLoading(false);
+
+        // Sync with Firestore in background
+        try {
+          const userRef = doc(db, 'users', fbUser.uid);
+          const userSnap = await getDoc(userRef);
+
+          if (userSnap.exists()) {
+            // Update with full data when available
+            setUser(prev => ({ ...baseUser, ...userSnap.data() } as User));
+          } else {
+            // Create record silently
+            try {
+              await setDoc(userRef, {
+                ...baseUser,
+                last_login: serverTimestamp()
+              });
+            } catch (writeError) {
+              console.warn("Background persistence failed (non-critical):", writeError);
+            }
+          }
+        } catch (error) {
+          console.warn("Background user sync warning:", error);
+        }
+      } else {
+        setUser(null);
+        setIsLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  // 경로 변경 시 인증 체크 (클라이언트에서만 실행)
+  // Route protection
   useEffect(() => {
-    if (!isLoading && isClient) {
+    if (!isLoading) {
       const isPublicPath = publicPaths.includes(pathname);
       const requiresAuth = authRequiredPaths.some(path => pathname.startsWith(path));
 
-      if (requiresAuth && !isAuthenticated) {
-        // 인증이 필요한 페이지인데 로그인하지 않은 경우
+      if (requiresAuth && !user) {
         router.push('/');
-      } else if (pathname === '/' && isAuthenticated) {
-        // 이미 로그인한 사용자가 첫 화면에 접근한 경우
-        router.push('/play');
+      }
+      // Removed automatic redirect from / to /play to show landing page
+      else if (pathname === '/' && user) {
+        // Only redirect if there was a specific target stored (e.g. from a deep link protected route)
+        const redirectTarget = localStorage.getItem('auth_redirect');
+        if (redirectTarget) {
+          localStorage.removeItem('auth_redirect');
+          router.push(redirectTarget);
+        }
+        // Otherwise do nothing, let them see the landing page
       }
     }
-  }, [pathname, isAuthenticated, isLoading, isClient]);
+  }, [pathname, user, isLoading]);
 
-  const checkAuth = async () => {
-    try {
-      // 게스트는 sessionStorage, 이메일 사용자는 localStorage에서 토큰 확인
-      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
-      
-      if (!token) {
-        setIsLoading(false);
-        return;
-      }
-
-      const response = await fetch('/api/auth/verify', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-
-      const data = await response.json();
-
-      if (data.success && data.data.user) {
-        setUser(data.data.user);
-        setIsAuthenticated(true);
-      } else {
-        // 토큰이 유효하지 않으면 제거
-        localStorage.removeItem('token');
-        sessionStorage.removeItem('token');
-      }
-    } catch (error) {
-      console.error('Auth check error:', error);
-      localStorage.removeItem('token');
-      sessionStorage.removeItem('token');
-    } finally {
-      setIsLoading(false);
-    }
+  const loginWithEmail = async (email: string, password: string) => {
+    await signInWithEmailAndPassword(auth, email, password);
   };
 
-  const login = (token: string, userData: User) => {
-    localStorage.setItem('token', token);
-    setUser(userData);
-    setIsAuthenticated(true);
-    router.push('/play');
+  const signupWithEmail = async (email: string, password: string) => {
+    await createUserWithEmailAndPassword(auth, email, password);
   };
 
-  const guestLogin = async (): Promise<boolean> => {
-    try {
-      // 랜덤 ID 생성 (서버/클라이언트 일관성을 위해 Math.random 사용)
-      const randomId = Math.random().toString(36).substr(2, 9);
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: `guest_${randomId}@temp.com`, 
-          isGuest: true 
-        })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        // 게스트는 sessionStorage에 토큰 저장 (브라우저 닫으면 삭제됨)
-        sessionStorage.setItem('token', data.data.token);
-        setUser(data.data.user);
-        setIsAuthenticated(true);
-        router.push('/play');
-        return true;
-      }
-      return false;
-    } catch (error) {
-      console.error('Guest login error:', error);
-      return false;
-    }
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    await signInWithPopup(auth, provider);
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    sessionStorage.removeItem('token');
-    setUser(null);
-    setIsAuthenticated(false);
+  const guestLogin = async () => {
+    await signInAnonymously(auth);
+  };
+
+  const logout = async () => {
+    await signOut(auth);
     router.push('/');
-  };
-
-  const updateUser = (userData: User) => {
-    setUser(userData);
   };
 
   return (
     <AuthContext.Provider value={{
       user,
+      firebaseUser,
       isLoading,
-      isAuthenticated,
-      login,
+      loginWithEmail,
+      signupWithEmail,
+      loginWithGoogle,
       guestLogin,
-      logout,
-      updateUser
+      logout
     }}>
       {children}
     </AuthContext.Provider>

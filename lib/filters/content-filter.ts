@@ -3,14 +3,14 @@ import { FilterResult } from '../../types';
 // 욕설 필터 (아동 친화적 필터)
 const profanityList = [
   // 한국어 욕설
-  '시발', '씨발', '씨팔', 'ㅅㅂ', 'ㅆㅂ', '개새끼', '개새', '새끼', 'ㅅㄲ', 
+  '시발', '씨발', '씨팔', 'ㅅㅂ', 'ㅆㅂ', '개새끼', '개새', '새끼', 'ㅅㄲ',
   '병신', '븅신', 'ㅂㅅ', '멍청이', '바보', '또라이', '미친', '죽어', '꺼져',
-  '닥쳐', '짜증', '재수없', '지랄', 'ㅈㄹ', '똥', '방구', '찌질',
-  
+  '닥쳐', '짜증', '재수없', '지랄', 'ㅈㄹ', '방구', '찌질',
+
   // 영어 욕설
-  'fuck', 'shit', 'damn', 'hell', 'ass', 'bitch', 'bastard', 
+  'fuck', 'shit', 'damn', 'bitch', 'bastard',
   'stupid', 'idiot', 'dumb', 'moron', 'retard', 'die', 'kill',
-  
+
   // 변형된 형태들
   'ㅅ1발', '시1발', 'tlqkf', 'tlfqkf', 'ㅄ', 'ㅂ1ㅅ', '병1신'
 ];
@@ -20,17 +20,17 @@ const tenCommandmentsList = [
   // 신성모독
   '하나님', '하느님', '예수', '그리스도', '성령', '삼위일체', '여호와', '야훼',
   'god', 'jesus', 'christ', 'lord',
-  
+
   // 살인/폭력 관련
-  '죽이', '살인', '자살', '목매', '칼', '총', '피', '때리', '폭행', '구타',
+  '살인', '자살', '목매', '폭행', '구타',
   'murder', 'suicide', 'blood', 'weapon',
-  
+
   // 도둑질 관련
   '훔치', '도둑', '절도', '강도', 'steal', 'thief', 'rob',
-  
+
   // 거짓 증언
   '거짓말', '사기', '속이', '배신', 'lie', 'cheat', 'betray',
-  
+
   // 간음 관련 (아동 부적절)
   '섹스', '성관계', '야동', '음란', 'sex', 'porn'
 ];
@@ -95,7 +95,7 @@ export function filterCharacterName(name: string): FilterResult {
   }
 
   const violations: string[] = [];
-  
+
   // 길이 체크
   if (name.length < 2 || name.length > 20) {
     violations.push('이름은 2-20자 사이여야 합니다');
