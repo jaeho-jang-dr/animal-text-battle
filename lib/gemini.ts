@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Initialize Gemini API
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY?.trim();
 if (!apiKey) {
     console.error("GEMINI_API_KEY is missing in environment variables!");
 } else {
@@ -12,7 +12,44 @@ const genAI = new GoogleGenerativeAI(apiKey || '');
 
 // Model for text generation (Flash is faster and cheaper, Pro is smarter)
 // Based on available models: gemini-2.0-flash is available.
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+// const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }); // This line is no longer directly used for generation
+
+// Helper to get response text safely
+async function generateWithFallback(prompt: string, isJson: boolean = false): Promise<string> {
+    const modelsToTry = [
+        "gemini-2.0-flash-exp",
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro",
+        "gemini-pro"
+    ];
+
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
+        try {
+            console.log(`Trying model: ${modelName} (JSON: ${isJson})`);
+            const model = genAI.getGenerativeModel({
+                model: modelName,
+                generationConfig: isJson ? { responseMimeType: "application/json" } : undefined
+            });
+
+            const result = isJson
+                ? await model.generateContent({
+                    contents: [{ role: "user", parts: [{ text: prompt }] }]
+                  })
+                : await model.generateContent(prompt);
+
+            const response = await result.response;
+            const text = response.text();
+            if (text) return text;
+        } catch (error: any) {
+            console.warn(`Model ${modelName} failed:`, error.message);
+            lastError = error;
+        }
+    }
+    throw lastError;
+}
 
 export async function generateBattleText(animalName: string, characterName: string): Promise<string> {
     if (!apiKey) {
@@ -21,28 +58,27 @@ export async function generateBattleText(animalName: string, characterName: stri
 
     const prompt = `
     당신은 창의적인 작가입니다. 동물 텍스트 배틀 게임의 캐릭터 대사를 작성해주세요.
-    
+
     동물: ${animalName}
     캐릭터 이름: ${characterName}
-    
+
     조건:
     1. **절대 100자를 넘기지 마세요.** (가급적 50자 내외로 짧게!)
     2. 딱 1~2문장으로 임팩트 있게 작성하세요.
     3. 자신감 넘치고, 자기 동물의 특징을 살린 내용.
     4. 아이들이 보기에 적절한 내용 (비속어 금지).
     5. "~다", "~까" 등의 당당한 어미 사용.
-    
+
     예시:
     "나는 초원의 지배자 사자왕이다! 나의 우렁찬 포효를 들어라!"
     "날렵한 치타처럼 너를 제압해주지. 준비는 되었나?"
-    
+
     출력:
   `;
 
     try {
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        let text = response.text().trim();
+        let text = await generateWithFallback(prompt, false);
+        text = text.trim();
 
         // Remove quotes if present
         text = text.replace(/^["']|["']$/g, '');
@@ -59,9 +95,10 @@ export async function generateBattleText(animalName: string, characterName: stri
             }
         }
         return text;
-    } catch (error) {
+    } catch (error: any) {
         console.error("Gemini Generation Error:", error);
-        throw new Error("AI 생성에 실패했습니다.");
+        // Expose the real error for debugging
+        throw new Error(`AI 생성 실패(${error.message}). 키 확인 필요.`);
     }
 }
 
@@ -83,20 +120,20 @@ export async function judgeBattleWithAI(
 
     const prompt = `
     당신은 "동물 텍스트 배틀"의 공정한 심판입니다. 두 캐릭터의 배틀 텍스트를 보고 승자를 결정해주세요.
-    
+
     [공격자]
     이름: ${attackerName} (${attackerAnimal})
     대사: "${attackerText}"
-    
+
     [방어자]
     이름: ${defenderName} (${defenderAnimal})
     대사: "${defenderText}"
-    
+
     판정 기준:
     1. 대사의 창의성과 박력 (70%)
     2. 동물의 특징을 얼마나 잘 표현했는가 (30%)
     3. 전투력 수치는 무시하고 오직 "텍스트"로만 판정하세요.
-    
+
     출력 형식 (JSON Only):
     {
       "winner": "attacker" 또는 "defender",
@@ -106,12 +143,7 @@ export async function judgeBattleWithAI(
   `;
 
     try {
-        const result = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: "application/json" }
-        });
-        const response = await result.response;
-        const jsonText = response.text();
+        const jsonText = await generateWithFallback(prompt, true);
         return JSON.parse(jsonText);
     } catch (error) {
         console.error("Gemini Judge Error:", error);
