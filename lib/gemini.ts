@@ -11,8 +11,8 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey || '');
 
 // Model for text generation (Flash is faster and cheaper, Pro is smarter)
-// Based on available models: gemini-2.0-flash is available.
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+// Switched to gemini-1.5-flash for better stability in production
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
 export async function generateBattleText(animalName: string, characterName: string): Promise<string> {
     if (!apiKey) {
@@ -59,9 +59,9 @@ export async function generateBattleText(animalName: string, characterName: stri
             }
         }
         return text;
-    } catch (error) {
+    } catch (error: any) {
         console.error("Gemini Generation Error:", error);
-        throw new Error("AI 생성에 실패했습니다.");
+        throw new Error(`AI 생성 실패: ${error.message}`);
     }
 }
 
