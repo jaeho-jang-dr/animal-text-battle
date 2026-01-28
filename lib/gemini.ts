@@ -10,9 +10,37 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey || '');
 
-// Model for text generation (Flash is faster and cheaper, Pro is smarter)
-// User requested to keep high version. Using gemini-2.0-flash-exp (preview).
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+// Helper to get response text safely
+async function generateWithFallback(prompt: string, isJson: boolean = false): Promise<string> {
+    const modelsToTry = ["gemini-2.0-flash-exp", "gemini-1.5-flash"];
+    let lastError: any = null;
+
+    for (const modelName of modelsToTry) {
+        try {
+            console.log(`Trying model: ${modelName} (JSON: ${isJson})`);
+            const model = genAI.getGenerativeModel({ 
+                model: modelName,
+                generationConfig: isJson ? { responseMimeType: "application/json" } : undefined
+            });
+            
+            const result = isJson 
+                ? await model.generateContent({
+                    contents: [{ role: "user", parts: [{ text: prompt }] }]
+                  })
+                : await model.generateContent(prompt);
+                
+            const response = await result.response;
+            return response.text();
+        } catch (error: any) {
+            console.warn(`Model ${modelName} failed:`, error.message);
+            lastError = error;
+            if (!error.message.includes('404') && !error.message.includes('not found')) {
+                 // specific error handling if needed
+            }
+        }
+    }
+    throw lastError;
+}
 
 export async function generateBattleText(animalName: string, characterName: string): Promise<string> {
     if (!apiKey) {
@@ -40,9 +68,8 @@ export async function generateBattleText(animalName: string, characterName: stri
   `;
 
     try {
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
-        let text = response.text().trim();
+        let text = await generateWithFallback(prompt, false);
+        text = text.trim();
 
         // Remove quotes if present
         text = text.replace(/^["']|["']$/g, '');
@@ -61,7 +88,7 @@ export async function generateBattleText(animalName: string, characterName: stri
         return text;
     } catch (error: any) {
         console.error("Gemini Generation Error:", error);
-        throw new Error(`AI 생성 실패: ${error.message}`);
+        throw new Error(`AI 생성 실패: ${error.message} (키 문제일 수 있습니다)`);
     }
 }
 
@@ -106,12 +133,7 @@ export async function judgeBattleWithAI(
   `;
 
     try {
-        const result = await model.generateContent({
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: "application/json" }
-        });
-        const response = await result.response;
-        const jsonText = response.text();
+        const jsonText = await generateWithFallback(prompt, true);
         return JSON.parse(jsonText);
     } catch (error) {
         console.error("Gemini Judge Error:", error);
