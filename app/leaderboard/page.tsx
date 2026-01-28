@@ -476,38 +476,42 @@ function LeaderboardContent() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100">
-      {/* 헤더 - Adjusted */}
-      <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 shadow-lg rounded-b-3xl mb-6">
-        <div className="max-w-7xl mx-auto text-center">
-          <h1 className="text-3xl font-bold mb-2">🏆 명예의 전당</h1>
-          <p className="text-purple-200">최강의 동물 전사들이 모인 곳!</p>
-        </div>
+    <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 pb-24">
+      {/* 헤더 - Global Design System */}
+      <div className="px-6 py-12 flex flex-col items-center bg-white/80 backdrop-blur-xl border border-white/50 shadow-sm rounded-b-[2.5rem] mb-12">
+        <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">🏆 명예의 전당</h1>
+        <p className="text-lg font-medium text-slate-500">최강의 동물 전사들이 모인 곳!</p>
       </div>
 
       {/* Battle Mode Banner */}
       {attackerCharacter && (
-        <div className="max-w-7xl mx-auto px-6 mb-6">
+        <div className="max-w-7xl mx-auto px-6 mb-8">
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 rounded-2xl shadow-lg flex items-center justify-between"
+            className="bg-white/80 backdrop-blur-xl border border-indigo-100 p-6 rounded-[2rem] shadow-xl flex items-center justify-between"
           >
-            <div className="flex items-center gap-4">
-              <div className="text-4xl bg-white/20 p-2 rounded-xl">
+            <div className="flex items-center gap-6">
+              <div className="text-5xl bg-indigo-50 p-4 rounded-2xl shadow-inner">
                 {attackerCharacter.animal?.emoji || '🐾'}
               </div>
               <div>
-                <p className="text-blue-100 text-sm font-bold uppercase tracking-wider">Currently Playing As</p>
-                <h2 className="text-2xl font-bold">{attackerCharacter.characterName}</h2>
-                <p className="text-blue-100 text-sm">
-                  {attackerCharacter.animal?.korean_name} | ELO: {attackerCharacter.eloScore} | {attackerCharacter.wins}승 {attackerCharacter.losses}패
-                </p>
+                <p className="text-indigo-500 text-xs font-black uppercase tracking-widest mb-1">CURRENTLY PLAYING AS</p>
+                <h2 className="text-3xl font-black text-slate-900">{attackerCharacter.characterName}</h2>
+                <div className="flex items-center gap-3 mt-1">
+                  <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-sm font-bold">
+                    {attackerCharacter.animal?.korean_name}
+                  </span>
+                  <span className="text-slate-400 font-bold">|</span>
+                  <span className="text-slate-600 font-bold">ELO {attackerCharacter.eloScore}</span>
+                  <span className="text-slate-400 font-bold">|</span>
+                  <span className="text-slate-600 font-bold">{attackerCharacter.wins}승 {attackerCharacter.losses}패</span>
+                </div>
               </div>
             </div>
             <button
               onClick={() => window.location.href = '/play'}
-              className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
+              className="bg-white border-2 border-indigo-100 text-indigo-600 hover:bg-indigo-50 px-6 py-3 rounded-xl text-sm font-bold transition-all hover:scale-105 shadow-sm"
             >
               캐릭터 변경
             </button>
@@ -558,27 +562,27 @@ function LeaderboardContent() {
         </motion.div>
 
         {/* 메인 탭 (랭킹 vs 훈련소) */}
-        <div className="flex justify-center mb-8 gap-4">
+        <div className="flex justify-center mb-10 gap-4">
           <button
-            onClick={() => setCategory('all')} // Reset category when switching tab usually, but here we repurpose or use separate state
-            className={`px-8 py-4 rounded-2xl font-bold text-xl transition-all shadow-lg flex items-center gap-2 ${!showBots
-              ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white scale-105 ring-4 ring-yellow-200'
-              : 'bg-white text-gray-500 hover:bg-gray-50'
+            onClick={() => setCategory('all')} 
+            className={`px-8 py-4 rounded-2xl font-bold text-xl transition-all shadow-xl flex items-center gap-3 ${!showBots
+              ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white scale-105 ring-4 ring-yellow-100'
+              : 'bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600'
               }`}
             onClickCapture={() => setShowBots(false)}
           >
-            <span>🏆</span>
+            <span className="text-2xl">🏆</span>
             <span>전체 랭킹</span>
           </button>
           <button
             onClick={() => setCategory('all')}
-            className={`px-8 py-4 rounded-2xl font-bold text-xl transition-all shadow-lg flex items-center gap-2 ${showBots
-              ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white scale-105 ring-4 ring-purple-200'
-              : 'bg-white text-gray-500 hover:bg-gray-50'
+            className={`px-8 py-4 rounded-2xl font-bold text-xl transition-all shadow-xl flex items-center gap-3 ${showBots
+              ? 'bg-gradient-to-r from-purple-500 to-indigo-500 text-white scale-105 ring-4 ring-purple-100'
+              : 'bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600'
               }`}
             onClickCapture={() => setShowBots(true)}
           >
-            <span>🤖</span>
+            <span className="text-2xl">🤖</span>
             <span>NPC 훈련소</span>
           </button>
         </div>
@@ -635,84 +639,90 @@ function LeaderboardContent() {
 
         {/* 리더보드 테이블 */}
         {isLoading ? (
-          <div className="text-center py-12">
-            <div className="text-6xl mb-4">⏳</div>
-            <p className="text-xl">순위를 불러오는 중...</p>
+          <div className="text-center py-20">
+            <div className="text-6xl mb-4 animate-bounce">⏳</div>
+            <p className="text-xl font-bold text-slate-400">순위를 불러오는 중...</p>
           </div>
         ) : (
-          <div className="bg-white rounded-3xl shadow-xl overflow-hidden">
+          <div className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-[2.5rem] shadow-2xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+                <thead className="bg-slate-50/80 border-b border-slate-100">
                   <tr>
-                    <th className="px-4 py-3 text-left">순위</th>
-                    <th className="px-4 py-3 text-left">캐릭터</th>
-                    <th className="px-4 py-3 text-left">동물</th>
-                    <th className="px-4 py-3 text-center">점수</th>
-                    <th className="px-4 py-3 text-center">승률</th>
-                    <th className="px-4 py-3 text-center">전적</th>
-                    <th className="px-4 py-3 text-center">액션</th>
+                    <th className="px-6 py-5 text-left text-sm font-black text-slate-400 uppercase tracking-wider">순위</th>
+                    <th className="px-6 py-5 text-left text-sm font-black text-slate-400 uppercase tracking-wider">전사 정보</th>
+                    <th className="px-6 py-5 text-left text-sm font-black text-slate-400 uppercase tracking-wider">동물</th>
+                    <th className="px-6 py-5 text-center text-sm font-black text-slate-400 uppercase tracking-wider">점수</th>
+                    <th className="px-6 py-5 text-center text-sm font-black text-slate-400 uppercase tracking-wider">승률</th>
+                    <th className="px-6 py-5 text-center text-sm font-black text-slate-400 uppercase tracking-wider">전적</th>
+                    <th className="px-6 py-5 text-center text-sm font-black text-slate-400 uppercase tracking-wider">액션</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-slate-100">
                   {entries
                     .filter(e => showBots ? e.isBot : !e.isBot)
                     .map((entry) => (
                       <tr
                         key={entry.id}
-                        className={`border-b-2 ${getRankColor(entry.rank)} hover:bg-opacity-70 transition-colors ${user && entry.userId === user.id ? 'ring-2 ring-blue-400' : ''
+                        className={`hover:bg-indigo-50/30 transition-colors ${user && entry.userId === user.id ? 'bg-indigo-50/50' : ''
                           }`}
                       >
-                        <td className="px-4 py-4">
-                          <div className="text-2xl font-bold">
+                        <td className="px-6 py-5">
+                          <div className="text-3xl font-black text-slate-300">
                             {getRankEmoji(entry.rank)}
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="font-bold text-lg">
+                        <td className="px-6 py-5">
+                          <div className="font-black text-lg text-slate-800">
                             {entry.characterName}
                             {entry.isBot && (
-                              <span className="ml-2 text-sm bg-purple-100 text-purple-700 px-2 py-1 rounded-full">
-                                🤖 AI
+                              <span className="ml-2 text-xs bg-purple-100 text-purple-600 px-2 py-1 rounded-full font-bold">
+                                NPC
                               </span>
                             )}
                           </div>
-                          <div className="text-sm text-gray-600">
+                          <div className="text-sm font-bold text-slate-400">
                             {entry.playerName || '익명의 전사'}
                           </div>
                         </td>
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-2">
-                            <span className="text-2xl">{entry.animalIcon}</span>
-                            <span>{entry.animalName}</span>
+                        <td className="px-6 py-5">
+                          <div className="flex items-center gap-3">
+                            <span className="text-3xl bg-white border border-slate-100 rounded-2xl p-2 shadow-sm">{entry.animalIcon}</span>
+                            <span className="font-bold text-slate-600">{entry.animalName}</span>
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
-                          <div className="font-bold text-lg">
-                            {sortBy === 'base' || sortBy === 'score' ? entry.baseScore : entry.eloScore}
+                        <td className="px-6 py-5 text-center">
+                          <div className="font-black text-xl text-slate-800">
+                            {sortBy === 'base' || sortBy === 'score' ? entry.baseScore.toLocaleString() : entry.eloScore.toLocaleString()}
                           </div>
-                          <div className="text-sm text-gray-600">
-                            {sortBy === 'base' || sortBy === 'score' ? `ELO: ${entry.eloScore}` : `기본: ${entry.baseScore}`}
+                          <div className="text-xs font-bold text-slate-400 uppercase tracking-wide">
+                            {sortBy === 'base' || sortBy === 'score' ? 'POINTS' : 'ELO'}
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
-                          <div className="font-bold text-lg">
+                        <td className="px-6 py-5 text-center">
+                          <div className="font-black text-lg text-slate-700">
                             {entry.winRate}%
                           </div>
-                        </td>
-                        <td className="px-4 py-4 text-center">
-                          <div className="text-sm">
-                            <span className="text-green-600 font-bold">{entry.wins}승</span>
-                            {' / '}
-                            <span className="text-red-600 font-bold">{entry.losses}패</span>
+                          <div className="w-16 h-2 bg-slate-100 rounded-full mx-auto mt-1 overflow-hidden">
+                            <div 
+                              className="h-full bg-gradient-to-r from-green-400 to-emerald-500" 
+                              style={{ width: `${entry.winRate}%` }}
+                            />
                           </div>
-                          <div className="text-xs text-gray-600">
+                        </td>
+                        <td className="px-6 py-5 text-center">
+                          <div className="text-sm font-bold">
+                            <span className="text-emerald-600">{entry.wins}승</span>
+                            <span className="mx-1 text-slate-300">/</span>
+                            <span className="text-rose-500">{entry.losses}패</span>
+                          </div>
+                          <div className="text-xs font-bold text-slate-400 mt-1">
                             총 {entry.totalBattles}전
                           </div>
                         </td>
-                        <td className="px-4 py-4 text-center">
+                        <td className="px-6 py-5 text-center">
                           {user && entry.userId === user.id ? (
-                            <div className="text-sm text-gray-500 font-medium">
+                            <div className="bg-slate-100 text-slate-500 px-4 py-2 rounded-xl text-sm font-bold">
                               나의 캐릭터
                             </div>
                           ) : (
@@ -722,14 +732,14 @@ function LeaderboardContent() {
                                 whileTap={{ scale: 0.95 }}
                                 onClick={() => startBattle(entry)}
                                 className={`${attackerId && attackerCharacter
-                                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
-                                  : 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600'
-                                  } text-white font-bold py-2 px-4 rounded-lg text-sm transition-all duration-200 shadow-lg hover:shadow-xl`}
+                                  ? 'bg-gradient-to-r from-indigo-500 to-purple-600 shadow-indigo-200'
+                                  : 'bg-gradient-to-r from-rose-500 to-orange-500 shadow-rose-200'
+                                  } text-white font-bold py-2 px-5 rounded-xl text-sm shadow-lg hover:shadow-xl transition-all`}
                               >
                                 {attackerId && attackerCharacter ? '⚔️ 바로 배틀!' : '⚔️ 도전!'}
                               </motion.button>
                               {entry.isBot && (
-                                <span className="text-xs text-purple-600">무제한</span>
+                                <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">무제한 배틀</span>
                               )}
                             </div>
                           )}
@@ -755,28 +765,19 @@ function LeaderboardContent() {
         )}
 
         {/* 하단 버튼들 */}
-        <div className="mt-8 flex justify-center gap-4">
+        <div className="mt-12 flex justify-center gap-6">
           <button
             onClick={() => window.location.href = '/play'}
-            className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
+            className="bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-4 px-8 rounded-2xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all transform flex items-center gap-2"
           >
-            🎮 게임으로 돌아가기
+            <span>🎮</span> 게임으로 돌아가기
           </button>
-
-          {user?.email && ['drjang000@gmail.com', 'drjang00@gmail.com', '102030hohoho@gmail.com'].includes(user.email) && (
-            <button
-              onClick={handleSeedBots}
-              className="bg-gray-800 text-white px-4 py-2 rounded-lg text-xs hover:bg-gray-700"
-            >
-              🤖 관리자: 봇 생성
-            </button>
-          )}
           {!user && (
             <button
               onClick={() => window.location.href = '/'}
-              className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-bold py-3 px-6 rounded-xl transition-all duration-200 transform hover:scale-105"
+              className="bg-white text-slate-700 border border-slate-200 font-bold py-4 px-8 rounded-2xl shadow-lg hover:shadow-xl hover:bg-slate-50 transition-all transform flex items-center gap-2"
             >
-              🔑 로그인하기
+              <span>🔑</span> 로그인하기
             </button>
           )}
         </div>

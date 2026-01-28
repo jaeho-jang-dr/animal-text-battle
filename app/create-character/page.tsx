@@ -181,7 +181,7 @@ function CreateCharacterContent() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100 relative">
+    <main className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 relative pb-24">
       <AnimatePresence>
         {isAnimalModalOpen && (
           <motion.div
@@ -198,11 +198,11 @@ function CreateCharacterContent() {
               onClick={(e) => e.stopPropagation()}
               className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[80vh] overflow-hidden flex flex-col"
             >
-              <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r from-purple-500 to-pink-500 text-white">
-                <h3 className="text-2xl font-bold">🦁 동물 친구 선택하기</h3>
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white">
+                <h3 className="text-2xl font-black text-slate-800">🦁 동물 친구 선택하기</h3>
                 <button
                   onClick={() => setIsAnimalModalOpen(false)}
-                  className="text-white hover:bg-white/20 rounded-full p-2 transition-colors"
+                  className="text-slate-400 hover:bg-slate-100 rounded-full p-2 transition-colors"
                 >
                   ✕
                 </button>
@@ -216,9 +216,9 @@ function CreateCharacterContent() {
                       setSelectedAnimal(animal);
                       setIsAnimalModalOpen(false);
                     }}
-                    className={`p-4 rounded-xl border-2 transition-all duration-200 hover:scale-105 ${selectedAnimal?.id === animal.id
-                      ? 'border-purple-500 bg-purple-50 ring-2 ring-purple-200'
-                      : 'border-gray-100 hover:border-purple-300 hover:shadow-md'
+                    className={`p-4 rounded-2xl border-2 transition-all duration-200 hover:scale-[1.02] ${selectedAnimal?.id === animal.id
+                      ? 'border-purple-500 bg-purple-50/50 ring-2 ring-purple-200 shadow-lg'
+                      : 'border-slate-100 hover:border-purple-300 hover:shadow-md bg-white'
                       }`}
                   >
                     <div className="text-5xl mb-2 text-center">{animal.emoji}</div>
@@ -232,34 +232,32 @@ function CreateCharacterContent() {
         )}
       </AnimatePresence>
 
-      {/* 헤더 */}
-      <div className="bg-gradient-to-r from-purple-600 to-pink-600 text-white p-6 shadow-lg rounded-b-3xl mb-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <h1 className="text-3xl font-bold mb-2">🎮 캐릭터 만들기</h1>
-          <p className="text-purple-200">
-            나만의 캐릭터를 만들어보세요! ({existingCharacters.length}/3)
-          </p>
-        </div>
+      {/* 헤더 - Global Design System */}
+      <div className="px-6 py-12 flex flex-col items-center bg-white/80 backdrop-blur-xl border border-white/50 shadow-sm rounded-b-[2.5rem] mb-12">
+        <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-2">🎮 캐릭터 만들기</h1>
+        <p className="text-lg font-medium text-slate-500">
+          나만의 캐릭터를 만들어보세요! ({existingCharacters.length}/3)
+        </p>
       </div>
 
       <div className="max-w-4xl mx-auto p-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-3xl shadow-xl p-8"
+          className="bg-white/80 backdrop-blur-xl border border-white/50 rounded-[2.5rem] shadow-2xl p-10"
         >
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-8">
             {/* 동물 선택 */}
             <div>
-              <label className="block text-lg font-bold mb-4">
+              <label className="block text-xl font-black text-slate-800 mb-4">
                 1️⃣ 동물 선택
               </label>
               {selectedAnimal ? (
-                <div className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-6 relative group">
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-[2rem] p-8 relative group border border-indigo-100">
                   <button
                     type="button"
                     onClick={() => setIsAnimalModalOpen(true)}
-                    className="absolute top-4 right-4 bg-white/50 hover:bg-white p-2 rounded-xl text-sm font-bold shadow-sm backdrop-blur transition-all opacity-0 group-hover:opacity-100"
+                    className="absolute top-6 right-6 bg-white hover:bg-slate-50 p-3 rounded-2xl text-sm font-bold shadow-md border border-slate-100 transition-all opacity-0 group-hover:opacity-100 text-indigo-600"
                   >
                     🔄 변경하기
                   </button>
@@ -332,21 +330,21 @@ function CreateCharacterContent() {
                   </div>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsAnimalModalOpen(true)}
-                  className="w-full bg-gradient-to-r from-purple-100 to-pink-100 hover:from-purple-200 hover:to-pink-200 p-8 rounded-2xl transition-all duration-200 border-2 border-dashed border-purple-200 hover:border-purple-300"
-                >
-                  <div className="text-4xl mb-2">🦁</div>
-                  <p className="text-gray-700 font-bold text-lg">눌러서 동물 선택하기</p>
-                  <p className="text-gray-400 text-sm mt-1">도감으로 이동하지 않고 바로 선택할 수 있어요!</p>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAnimalModalOpen(true)}
+                    className="w-full bg-white hover:bg-slate-50 p-12 rounded-[2.5rem] transition-all duration-200 border-2 border-dashed border-slate-200 hover:border-purple-400 group"
+                  >
+                    <div className="text-6xl mb-4 group-hover:scale-110 transition-transform duration-200">🦁</div>
+                    <p className="text-slate-800 font-black text-xl mb-1">눌러서 동물 선택하기</p>
+                    <p className="text-slate-400 font-medium text-sm">도감으로 이동하지 않고 바로 선택할 수 있어요!</p>
+                  </button>
               )}
             </div>
 
             {/* 캐릭터 이름 */}
             <div>
-              <label className="block text-lg font-bold mb-4">
+              <label className="block text-xl font-black text-slate-800 mb-4">
                 2️⃣ 캐릭터 이름 (2-20자)
               </label>
               <input
@@ -354,7 +352,7 @@ function CreateCharacterContent() {
                 value={characterName}
                 onChange={(e) => setCharacterName(e.target.value.slice(0, 20))}
                 placeholder="예: 용감한 사자왕"
-                className="w-full px-4 py-3 border-2 border-gray-300 rounded-xl focus:border-purple-500 focus:outline-none text-lg"
+                className="w-full px-6 py-4 border-2 border-slate-200 rounded-2xl focus:border-purple-500 focus:ring-4 focus:ring-purple-500/20 focus:outline-none text-lg font-bold placeholder-slate-300 transition-all bg-slate-50 focus:bg-white"
                 required
               />
               <div className="text-right mt-2 text-sm text-gray-600">
@@ -364,14 +362,14 @@ function CreateCharacterContent() {
 
             {/* 배틀 텍스트 */}
             <div>
-              <label className="block text-lg font-bold mb-4">
+              <label className="block text-xl font-black text-slate-800 mb-4">
                 3️⃣ 배틀 텍스트 (10-100자)
               </label>
               <textarea
                 value={battleText}
                 onChange={(e) => setBattleText(e.target.value.slice(0, 100))}
                 placeholder="예: 나는 정글의 왕! 용감하고 강력한 사자다. 모든 동물들이 나를 존경한다!"
-                className="w-full p-4 border-2 border-gray-300 rounded-xl focus:border-purple-500 focus:outline-none resize-none h-32 text-lg"
+                className="w-full p-6 border-2 border-slate-200 rounded-2xl focus:border-purple-500 focus:ring-4 focus:ring-purple-500/20 focus:outline-none resize-none h-40 text-lg font-medium placeholder-slate-300 transition-all bg-slate-50 focus:bg-white"
                 required
               />
               <div className="flex justify-between mt-2 text-sm items-center">
@@ -414,9 +412,9 @@ function CreateCharacterContent() {
                         setIsLoading(false);
                       }
                     }}
-                    className="bg-indigo-100 hover:bg-indigo-200 text-indigo-700 px-3 py-1 rounded-lg font-bold transition-colors flex items-center gap-1"
+                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-4 py-2 rounded-xl font-bold transition-colors flex items-center gap-2 border border-indigo-200"
                   >
-                    ✨ AI로 자동 생성
+                    <span>✨</span> AI로 자동 생성
                   </button>
                 </div>
                 <span className={`${battleText.length < 10 ? 'text-red-600' :
@@ -435,18 +433,18 @@ function CreateCharacterContent() {
             )}
 
             {/* 제출 버튼 */}
-            <div className="flex gap-4">
+            <div className="flex gap-4 pt-4">
               <button
                 type="submit"
                 disabled={isLoading || !selectedAnimal || !characterName || !battleText}
-                className="flex-1 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 disabled:from-gray-400 disabled:to-gray-500 text-white font-bold py-4 px-6 rounded-xl text-lg transition-all duration-200 transform hover:scale-105 disabled:scale-100"
+                className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:shadow-xl hover:scale-[1.02] disabled:from-slate-300 disabled:to-slate-400 text-white font-bold py-5 px-8 rounded-2xl text-xl transition-all duration-200 transform shadow-lg disabled:scale-100 disabled:shadow-none"
               >
                 {isLoading ? '생성 중...' : '🎮 캐릭터 생성하기'}
               </button>
               <button
                 type="button"
                 onClick={() => router.push('/play')}
-                className="px-8 py-4 bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold rounded-xl text-lg transition-all duration-200"
+                className="px-10 py-5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-2xl text-xl transition-all duration-200"
               >
                 취소
               </button>
@@ -460,15 +458,15 @@ function CreateCharacterContent() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="mt-8 bg-white rounded-3xl shadow-xl p-8"
+            className="mt-8 bg-white/60 backdrop-blur-lg border border-white/50 rounded-[2.5rem] shadow-lg p-10"
           >
-            <h2 className="text-xl font-bold mb-4">내 캐릭터 목록 ({existingCharacters.length}/3)</h2>
+            <h2 className="text-xl font-black text-slate-800 mb-6">내 캐릭터 목록 ({existingCharacters.length}/3)</h2>
             <div className="grid md:grid-cols-3 gap-4">
               {existingCharacters.map((char) => (
-                <div key={char.id} className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4 text-center">
-                  <div className="text-3xl mb-2">{char.animal?.emoji}</div>
-                  <p className="font-bold">{char.characterName}</p>
-                  <p className="text-sm text-gray-600">{char.animal?.korean_name}</p>
+                <div key={char.id} className="bg-white border border-slate-100 rounded-2xl p-6 text-center shadow-sm">
+                  <div className="text-4xl mb-3">{char.animal?.emoji}</div>
+                  <p className="font-bold text-slate-800 text-lg">{char.characterName}</p>
+                  <p className="text-sm text-slate-500 font-medium">{char.animal?.korean_name}</p>
                 </div>
               ))}
             </div>

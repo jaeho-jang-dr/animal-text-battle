@@ -105,17 +105,17 @@ export default function PlayPage() {
   if (!user) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-100 to-blue-50 pb-24">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 pb-24">
 
-      {/* Header - Adjusted for global layout */}
-      <div className="px-6 py-6 flex justify-between items-center bg-white/50 backdrop-blur-sm rounded-b-2xl mb-4">
+      {/* Header - Global Design System */}
+      <div className="px-6 py-6 flex justify-between items-center bg-white/80 backdrop-blur-xl border border-white/50 shadow-sm rounded-b-[2.5rem] mb-8">
         <div>
-          <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-blue-500">
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">
             배틀 아레나
           </h1>
-          <p className="text-xs text-gray-500 font-bold">VS {user.displayName || '플레이어'}</p>
+          <p className="text-sm font-bold text-slate-500">VS {user.displayName || '플레이어'}</p>
         </div>
-        <div className="bg-white p-2 rounded-full shadow-sm">
+        <div className="bg-white/50 border border-white/50 p-3 rounded-2xl shadow-sm font-bold text-indigo-600">
           🦁 {characters.length}/3
         </div>
       </div>
@@ -144,7 +144,7 @@ export default function PlayPage() {
               <p className="text-gray-500 mb-8">나만의 동물 친구를 만들어보세요.</p>
               <button
                 onClick={() => router.push('/create-character')}
-                className="bg-blue-500 text-white px-8 py-4 rounded-2xl font-bold shadow-xl hover:scale-105 transition"
+                className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-4 rounded-2xl font-bold shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all transform"
               >
                 캐릭터 생성하기 +
               </button>
@@ -160,7 +160,7 @@ export default function PlayPage() {
                     actionButton={
                       <button
                         onClick={(e) => { e.stopPropagation(); handleBattleClick(char); }}
-                        className="mt-4 w-full bg-white/20 hover:bg-white/30 text-white font-bold py-3 rounded-xl backdrop-blur-md border border-white/30 transition shadow-lg"
+                        className="mt-4 w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white font-bold py-3 rounded-xl shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all transform"
                       >
                         ⚔️ 배틀 하러 가기!
                       </button>
@@ -173,7 +173,7 @@ export default function PlayPage() {
                 <div className="flex justify-center">
                   <button
                     onClick={() => router.push('/create-character')}
-                    className="w-full md:w-auto md:px-12 py-4 border-2 border-dashed border-gray-300 rounded-3xl text-gray-400 font-bold hover:bg-gray-50 transition"
+                    className="w-full md:w-auto md:px-12 py-4 border-2 border-dashed border-purple-200 bg-purple-50/50 rounded-[2.5rem] text-purple-400 font-bold hover:bg-purple-50 transition-all hover:border-purple-300"
                   >
                     + 새로운 캐릭터 추가 ({characters.length}/3)
                   </button>

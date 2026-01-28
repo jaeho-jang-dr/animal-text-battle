@@ -1,57 +1,67 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Initialize Gemini API
+// Initialize Gemini API - FORCE reload from environment
 const apiKey = process.env.GEMINI_API_KEY?.trim();
+
+console.log("=== GEMINI INITIALIZATION DEBUG ===");
+console.log("API Key Status:", apiKey ? `Found (${apiKey.substring(0, 10)}...)` : "MISSING");
+console.log("Full Env Keys:", Object.keys(process.env).filter(k => k.includes('GEMINI')));
+
 if (!apiKey) {
-    console.error("GEMINI_API_KEY is missing in environment variables!");
-} else {
-    console.log("Gemini API Key loaded (starts with " + apiKey.substring(0, 4) + ")");
+    console.error("CRITICAL: GEMINI_API_KEY is missing in environment variables!");
 }
 
 const genAI = new GoogleGenerativeAI(apiKey || '');
 
-// Model for text generation (Flash is faster and cheaper, Pro is smarter)
-// Based on available models: gemini-2.0-flash is available.
-// const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" }); // This line is no longer directly used for generation
-
-// Helper to get response text safely
+// Helper to get response text safely using ONLY the working model
 async function generateWithFallback(prompt: string, isJson: boolean = false): Promise<string> {
-    const modelsToTry = [
-        "gemini-2.0-flash-exp",
-        "gemini-2.0-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-pro",
-        "gemini-pro"
-    ];
+    // Using gemini-1.5-flash for better free tier quota (2.0-flash has very limited quota)
+    const modelName = "gemini-1.5-flash";
+    
+    console.log(`[Gemini] Using model: ${modelName} (JSON: ${isJson})`);
+    console.log(`[Gemini] API Key being used: ${apiKey?.substring(0, 10)}...`);
+    
+    try {
+        const model = genAI.getGenerativeModel({
+            model: modelName,
+            generationConfig: isJson ? { responseMimeType: "application/json" } : undefined
+        });
 
-    let lastError: any = null;
+        const result = isJson
+            ? await model.generateContent({
+                contents: [{ role: "user", parts: [{ text: prompt }] }]
+                })
+            : await model.generateContent(prompt);
 
-    for (const modelName of modelsToTry) {
-        try {
-            console.log(`Trying model: ${modelName} (JSON: ${isJson})`);
-            const model = genAI.getGenerativeModel({
-                model: modelName,
-                generationConfig: isJson ? { responseMimeType: "application/json" } : undefined
-            });
-
-            const result = isJson
-                ? await model.generateContent({
-                    contents: [{ role: "user", parts: [{ text: prompt }] }]
-                  })
-                : await model.generateContent(prompt);
-
-            const response = await result.response;
-            const text = response.text();
-            if (text) return text;
-        } catch (error: any) {
-            console.warn(`Model ${modelName} failed:`, error.message);
-            lastError = error;
+        const response = await result.response;
+        const text = response.text();
+        return text;
+    } catch (error: any) {
+        console.error(`[Gemini] Model ${modelName} failed:`, error);
+        console.error(`[Gemini] Error details:`, {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        
+        // Handle specific error codes if possible
+        const msg = error.message || "";
+        if (msg.includes("503") || msg.includes("429")) {
+            throw new Error("AI 서버가 지금 매우 바쁩니다 (503/429). 잠시 후 다시 시도해주세요.");
+        } else if (msg.includes("404")) {
+            throw new Error("AI 모델을 찾을 수 없습니다 (404). API 키 권한을 확인해주세요.");
+        } else if (msg.includes("403") || msg.includes("leaked")) {
+            throw new Error(`AI API 키가 차단되었습니다 (403). 현재 키: ${apiKey?.substring(0, 10)}...`);
         }
+        
+        throw new Error(`AI 생성 오류: ${msg}`);
     }
-    throw lastError;
 }
 
 export async function generateBattleText(animalName: string, characterName: string): Promise<string> {
+    console.log("[generateBattleText] Starting generation for:", { animalName, characterName });
+    console.log("[generateBattleText] API Key check:", apiKey ? `Present (${apiKey.substring(0, 10)}...)` : "MISSING");
+    
     if (!apiKey) {
         throw new Error("API Key가 설정되지 않았습니다. (.env.local 확인 필요)");
     }
@@ -84,21 +94,24 @@ export async function generateBattleText(animalName: string, characterName: stri
         text = text.replace(/^["']|["']$/g, '');
 
         // Force truncate if too long (safety net)
-        if (text.length > 95) {
-            // Cut at the last punctuation mark before 95 chars to keep it natural
-            const cutIndex = text.lastIndexOf('.', 95);
+        // User requested 98 characters limit
+        if (text.length > 98) {
+            // Cut at the last punctuation mark before 98 chars to keep it natural
+            const cutIndex = text.lastIndexOf('.', 98);
             if (cutIndex > 0) {
                 text = text.substring(0, cutIndex + 1);
             } else {
                 // Fallback: just hard cut
-                text = text.substring(0, 95) + "...";
+                text = text.substring(0, 98) + "...";
             }
         }
+        
+        console.log("[generateBattleText] Success! Generated text:", text);
         return text;
     } catch (error: any) {
-        console.error("Gemini Generation Error:", error);
-        // Expose the real error for debugging
-        throw new Error(`AI 생성 실패(${error.message}). 키 확인 필요.`);
+        console.error("[generateBattleText] Error:", error);
+        // Propagate the error message clearly
+        throw error; 
     }
 }
 
@@ -144,7 +157,12 @@ export async function judgeBattleWithAI(
 
     try {
         const jsonText = await generateWithFallback(prompt, true);
-        return JSON.parse(jsonText);
+        const parsed = JSON.parse(jsonText);
+        // Validate response structure slightly
+        if (!parsed.winner || !parsed.judgment) {
+             throw new Error("Invalid AI response structure");
+        }
+        return parsed;
     } catch (error) {
         console.error("Gemini Judge Error:", error);
         // Fallback if AI fails: Random or Length based
