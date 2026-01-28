@@ -12,12 +12,22 @@ const genAI = new GoogleGenerativeAI(apiKey || '');
 
 // Helper to get response text safely
 async function generateWithFallback(prompt: string, isJson: boolean = false): Promise<string> {
-    const modelsToTry = ["gemini-2.0-flash-exp", "gemini-1.5-flash"];
+    // Try reliable models in order. 
+    // User reported 1.5 key mismatch issues, so we try a broad range.
+    const modelsToTry = [
+        "gemini-2.0-flash-exp", 
+        "gemini-2.0-flash",
+        "gemini-1.5-flash", 
+        "gemini-1.5-pro", 
+        "gemini-pro"
+    ];
+    
     let lastError: any = null;
+    let successModel = "";
 
     for (const modelName of modelsToTry) {
         try {
-            console.log(`Trying model: ${modelName} (JSON: ${isJson})`);
+            // console.log(`Trying model: ${modelName}`); // Remove log to reduce noise if needed, or keep for debug
             const model = genAI.getGenerativeModel({ 
                 model: modelName,
                 generationConfig: isJson ? { responseMimeType: "application/json" } : undefined
@@ -30,15 +40,19 @@ async function generateWithFallback(prompt: string, isJson: boolean = false): Pr
                 : await model.generateContent(prompt);
                 
             const response = await result.response;
-            return response.text();
+            const text = response.text();
+            if (text) {
+                successModel = modelName;
+                return text;
+            }
         } catch (error: any) {
             console.warn(`Model ${modelName} failed:`, error.message);
             lastError = error;
-            if (!error.message.includes('404') && !error.message.includes('not found')) {
-                 // specific error handling if needed
-            }
         }
     }
+    
+    // If all failed, throw the last error (likely 404 or similar)
+    console.error("All models failed. Last error from " + modelsToTry[modelsToTry.length-1]);
     throw lastError;
 }
 
