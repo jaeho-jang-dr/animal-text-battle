@@ -132,11 +132,12 @@ function LeaderboardContent() {
 
         if (category !== 'all' && data.animal?.category !== category) return;
 
-        let resolvedPlayerName = 'Unknown';
+        let resolvedPlayerName = '';
         if (data.isBot) {
           resolvedPlayerName = 'NPC';
         } else {
-          resolvedPlayerName = (data as any).user?.displayName || data.userId || 'Unknown';
+          // 이메일의 @ 앞부분을 로그인 아이디로 표시 (최대 8자)
+          resolvedPlayerName = (data as any).user?.loginId || '';
         }
 
         fetchedEntries.push({
@@ -687,8 +688,8 @@ function LeaderboardContent() {
                               </span>
                             )}
                           </div>
-                          <div className="text-sm font-bold text-slate-400">
-                            {entry.playerName || '익명의 전사'}
+                          <div className="text-xs font-medium text-slate-400">
+                            {entry.isBot ? '' : entry.playerName ? `@${entry.playerName}` : ''}
                           </div>
                         </td>
                         <td className="px-6 py-5">

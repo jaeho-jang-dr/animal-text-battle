@@ -2,468 +2,388 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../../contexts/AuthContext';
+
+interface AdminLog {
+  id: string;
+  action: string;
+  admin_email: string;
+  target_user_id?: string;
+  details?: string;
+  created_at: string;
+}
+
+interface WarningLog {
+  id: string;
+  type: string;
+  action: string;
+  user_name: string;
+  user_id: string;
+  content: string;
+  issued_by: string;
+  created_at: string;
+}
 
 interface BattleLog {
   id: string;
+  type: string;
+  attacker: string;
+  defender: string;
+  winner: string;
   created_at: string;
-  attacker_name: string;
-  defender_name: string;
-  attacker_battle_text: string;
-  defender_battle_text: string;
-  winner_id: string;
-  ai_judgment: string;
-  attacker_user_name: string;
-  defender_user_name: string;
-  attacker_warnings: number;
-  defender_warnings: number;
-  attacker_suspended: boolean;
-  defender_suspended: boolean;
-  attacker_is_guest: boolean;
-  defender_is_guest: boolean;
-  attacker_emoji: string;
-  defender_emoji: string;
 }
 
-interface ProblemUser {
+interface RecentUser {
   id: string;
+  type: string;
   display_name: string;
   email: string;
   is_guest: boolean;
-  warning_count: number;
-  is_suspended: boolean;
   created_at: string;
-  character_count: number;
-  battle_count: number;
-  last_battle: string;
 }
 
-interface Warning {
-  id: string;
-  user_id: string;
-  warning_type: string;
-  content: string;
-  created_at: string;
-  display_name: string;
-  character_name?: string;
+interface LogStats {
+  totalAdminLogs: number;
+  totalWarnings: number;
+  todayWarnings: number;
+  todayBattles: number;
 }
 
 export default function LogsTab() {
-  const [logs, setLogs] = useState<BattleLog[]>([]);
-  const [problemUsers, setProblemUsers] = useState<ProblemUser[]>([]);
-  const [warnings, setWarnings] = useState<Warning[]>([]);
-  const [selectedUser, setSelectedUser] = useState<string | null>(null);
+  const { firebaseUser } = useAuth();
+  const [adminLogs, setAdminLogs] = useState<AdminLog[]>([]);
+  const [warningLogs, setWarningLogs] = useState<WarningLog[]>([]);
+  const [battleLogs, setBattleLogs] = useState<BattleLog[]>([]);
+  const [recentUsers, setRecentUsers] = useState<RecentUser[]>([]);
+  const [stats, setStats] = useState<LogStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [filterType, setFilterType] = useState<'all' | 'warnings' | 'suspended' | 'guest'>('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState<'admin' | 'warning' | 'battle' | 'users'>('warning');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [oldGuestStats, setOldGuestStats] = useState<any>(null);
-  const [showWarningModal, setShowWarningModal] = useState(false);
 
   useEffect(() => {
-    fetchBattleLogs();
-  }, [filterType, searchTerm, dateFrom, dateTo, currentPage]);
+    fetchLogs();
+  }, [firebaseUser, dateFrom, dateTo]);
 
-  const fetchBattleLogs = async () => {
+  const getAuthHeaders = async () => {
+    if (!firebaseUser) return {};
+    const token = await firebaseUser.getIdToken();
+    return { Authorization: `Bearer ${token}` };
+  };
+
+  const fetchLogs = async () => {
     try {
       setIsLoading(true);
-      const adminToken = localStorage.getItem('adminToken');
-      
-      const params = new URLSearchParams({
-        page: currentPage.toString(),
-        limit: '50',
-        filterType,
-        ...(searchTerm && { search: searchTerm }),
-        ...(dateFrom && { dateFrom }),
-        ...(dateTo && { dateTo })
-      });
+      const headers = await getAuthHeaders();
+      const params = new URLSearchParams();
+      if (dateFrom) params.append('dateFrom', dateFrom);
+      if (dateTo) params.append('dateTo', dateTo);
 
-      const response = await fetch(`/api/admin/battle-logs?${params}`, {
-        headers: { 'X-Admin-Token': adminToken || '' }
-      });
-
+      const response = await fetch(`/api/admin/logs?${params}`, { headers });
       const data = await response.json();
+
       if (data.success) {
-        setLogs(data.data.logs);
-        setProblemUsers(data.data.problemUsers);
-        setTotalPages(data.data.pagination.totalPages);
-        setOldGuestStats(data.data.oldGuestUsers);
+        setAdminLogs(data.data.logs || []);
+        setWarningLogs(data.data.warningLogs || []);
+        setBattleLogs(data.data.battleLogs || []);
+        setRecentUsers(data.data.recentUsers || []);
+        setStats(data.data.stats || null);
       }
     } catch (error) {
-      console.error('Failed to fetch battle logs:', error);
+      console.error('Failed to fetch logs:', error);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const fetchUserWarnings = async (userId: string) => {
-    try {
-      const adminToken = localStorage.getItem('adminToken');
-      const response = await fetch(`/api/admin/warnings?userId=${userId}`, {
-        headers: { 'X-Admin-Token': adminToken || '' }
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setWarnings(data.data.warnings);
-        setSelectedUser(userId);
-        setShowWarningModal(true);
-      }
-    } catch (error) {
-      console.error('Failed to fetch warnings:', error);
-    }
-  };
-
-  const handleRemoveUser = async (userId: string) => {
-    if (!confirm('정말로 이 사용자를 제거하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
-      return;
-    }
-
-    try {
-      const adminToken = localStorage.getItem('adminToken');
-      const response = await fetch('/api/admin/battle-logs', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Token': adminToken || ''
-        },
-        body: JSON.stringify({ action: 'remove-user', userId })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        alert(data.message);
-        fetchBattleLogs();
-      } else {
-        alert('사용자 제거에 실패했습니다: ' + data.error);
-      }
-    } catch (error) {
-      console.error('Failed to remove user:', error);
-      alert('사용자 제거 중 오류가 발생했습니다');
-    }
-  };
-
-  const handleCleanupGuests = async () => {
-    if (!confirm(`24시간 이상 된 게스트 계정 ${oldGuestStats?.count || 0}개를 정리하시겠습니까?`)) {
-      return;
-    }
-
-    try {
-      const adminToken = localStorage.getItem('adminToken');
-      const response = await fetch('/api/admin/battle-logs', {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Admin-Token': adminToken || ''
-        },
-        body: JSON.stringify({ action: 'cleanup-guests' })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        alert(data.message);
-        fetchBattleLogs();
-      } else {
-        alert('게스트 정리에 실패했습니다: ' + data.error);
-      }
-    } catch (error) {
-      console.error('Failed to cleanup guests:', error);
-      alert('게스트 정리 중 오류가 발생했습니다');
-    }
-  };
-
-  const getWarningTypeLabel = (type: string) => {
-    switch (type) {
-      case 'profanity': return '🤬 욕설';
-      case 'commandment': return '⛪ 계명 위반';
-      case 'inappropriate': return '⚠️ 부적절한 내용';
-      default: return '❓ 기타';
-    }
-  };
-
   const formatDate = (dateString: string) => {
+    if (!dateString) return '-';
     return new Date(dateString).toLocaleString('ko-KR', {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
   };
 
+  const getActionLabel = (action: string) => {
+    const labels: { [key: string]: string } = {
+      warning_issued: '⚠️ 경고 발송',
+      user_suspended: '⛔ 사용자 정지',
+      user_unsuspended: '✅ 정지 해제',
+      setting_changed: '⚙️ 설정 변경',
+      maintenance_on: '🚧 점검 모드 시작',
+      maintenance_off: '✅ 점검 모드 종료',
+    };
+    return labels[action] || action;
+  };
+
+  const getWarningTypeLabel = (type: string) => {
+    const labels: { [key: string]: string } = {
+      profanity: '🤬 욕설',
+      inappropriate_content: '⚠️ 부적절한 내용',
+      spam: '📢 도배',
+      harassment: '😠 괴롭힘',
+      manual_warning: '✋ 수동 경고',
+      other: '❓ 기타',
+    };
+    return labels[type] || type;
+  };
+
+  const tabs = [
+    { id: 'warning', label: '⚠️ 경고 로그', count: warningLogs.length },
+    { id: 'battle', label: '⚔️ 배틀 로그', count: battleLogs.length },
+    { id: 'users', label: '👥 신규 가입', count: recentUsers.length },
+    { id: 'admin', label: '👮 관리자 활동', count: adminLogs.length },
+  ];
+
   return (
     <div className="space-y-6">
-      {/* 필터 및 검색 */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-medium mb-4">배틀 로그 검색 및 필터</h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-          <select
-            value={filterType}
-            onChange={(e) => setFilterType(e.target.value as any)}
-            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="all">전체</option>
-            <option value="warnings">경고 있음</option>
-            <option value="suspended">정지된 사용자</option>
-            <option value="guest">게스트 사용자</option>
-          </select>
-
-          <input
-            type="text"
-            placeholder="검색 (이름, 이메일, 배틀 텍스트)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
-
-        {/* 게스트 정리 버튼 */}
-        {oldGuestStats && oldGuestStats.count > 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <p className="text-sm text-yellow-800 mb-2">
-              🕐 24시간 이상 된 게스트 계정: {oldGuestStats.count}개
-            </p>
-            <button
-              onClick={handleCleanupGuests}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
-            >
-              게스트 계정 일괄 정리
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* 문제 사용자 목록 */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-medium mb-4">⚠️ 문제 사용자 목록</h3>
-        
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead>
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">사용자</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">유형</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">경고</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">상태</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">캐릭터</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">배틀</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">마지막 활동</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">액션</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {problemUsers.map((user) => (
-                <tr key={user.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div>
-                      <p className="font-medium">{user.display_name}</p>
-                      <p className="text-xs text-gray-500">{user.email || 'Guest'}</p>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`px-2 py-1 text-xs rounded-full ${
-                      user.is_guest ? 'bg-gray-100 text-gray-700' : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {user.is_guest ? '게스트' : '가입'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className="text-red-600 font-bold">{user.warning_count}</span>
-                  </td>
-                  <td className="px-4 py-3">
-                    {user.is_suspended ? (
-                      <span className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded-full">정지됨</span>
-                    ) : (
-                      <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">활성</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center">{user.character_count}</td>
-                  <td className="px-4 py-3 text-center">{user.battle_count}</td>
-                  <td className="px-4 py-3 text-xs">
-                    {user.last_battle ? formatDate(user.last_battle) : '-'}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => fetchUserWarnings(user.id)}
-                        className="text-blue-600 hover:text-blue-800 text-sm font-medium"
-                      >
-                        상세
-                      </button>
-                      <button
-                        onClick={() => handleRemoveUser(user.id)}
-                        className="text-red-600 hover:text-red-800 text-sm font-medium"
-                      >
-                        제거
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* 배틀 로그 목록 */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-medium mb-4">📋 배틀 로그</h3>
-        
-        {isLoading ? (
-          <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto"></div>
-          </div>
-        ) : (
-          <>
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {logs.map((log) => (
-                <div key={log.id} className="border rounded-lg p-4 hover:bg-gray-50">
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="text-sm text-gray-500">{formatDate(log.created_at)}</div>
-                    <div className="flex gap-2">
-                      {(log.attacker_warnings > 0 || log.defender_warnings > 0) && (
-                        <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded-full">
-                          ⚠️ 경고
-                        </span>
-                      )}
-                      {(log.attacker_suspended || log.defender_suspended) && (
-                        <span className="px-2 py-1 bg-red-100 text-red-700 text-xs rounded-full">
-                          🚫 정지
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className={`p-3 rounded-lg ${
-                      log.winner_id === log.id ? 'bg-green-50' : 'bg-red-50'
-                    }`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-2xl">{log.attacker_emoji}</span>
-                        <span className="font-medium">{log.attacker_name}</span>
-                      </div>
-                      <div className="text-xs text-gray-600 mb-1">
-                        {log.attacker_user_name} {log.attacker_is_guest && '(게스트)'}
-                        {log.attacker_warnings > 0 && ` • 경고 ${log.attacker_warnings}회`}
-                      </div>
-                      <div className="text-sm italic text-gray-700">
-                        "{log.attacker_battle_text?.substring(0, 50)}..."
-                      </div>
-                    </div>
-
-                    <div className={`p-3 rounded-lg ${
-                      log.winner_id !== log.id ? 'bg-green-50' : 'bg-red-50'
-                    }`}>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-2xl">{log.defender_emoji}</span>
-                        <span className="font-medium">{log.defender_name}</span>
-                      </div>
-                      <div className="text-xs text-gray-600 mb-1">
-                        {log.defender_user_name} {log.defender_is_guest && '(게스트)'}
-                        {log.defender_warnings > 0 && ` • 경고 ${log.defender_warnings}회`}
-                      </div>
-                      <div className="text-sm italic text-gray-700">
-                        "{log.defender_battle_text?.substring(0, 50)}..."
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-2 text-sm text-gray-600">
-                    <p className="font-medium">AI 판정:</p>
-                    <p className="italic">{log.ai_judgment}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* 페이지네이션 */}
-            <div className="flex justify-center gap-2 mt-4">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="px-4 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
-              >
-                이전
-              </button>
-              <span className="px-4 py-2">
-                {currentPage} / {totalPages}
-              </span>
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="px-4 py-2 bg-gray-200 rounded-lg disabled:opacity-50"
-              >
-                다음
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* 경고 상세 모달 */}
-      <AnimatePresence>
-        {showWarningModal && (
+      {/* 통계 카드 */}
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-            onClick={() => setShowWarningModal(false)}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-xl shadow-lg p-4 text-center"
           >
-            <motion.div
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.9 }}
-              className="bg-white rounded-lg shadow-xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-medium mb-4">경고 상세 내역</h3>
-              
-              <div className="space-y-3">
-                {warnings.map((warning) => (
-                  <div key={warning.id} className="border rounded-lg p-4">
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="font-medium">{getWarningTypeLabel(warning.warning_type)}</span>
-                      <span className="text-xs text-gray-500">{formatDate(warning.created_at)}</span>
-                    </div>
-                    <p className="text-sm text-gray-700 mb-1">
-                      사용자: {warning.display_name}
-                      {warning.character_name && ` (${warning.character_name})`}
-                    </p>
-                    <div className="bg-gray-50 rounded p-2">
-                      <p className="text-sm text-gray-600 italic">"{warning.content}"</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <button
-                onClick={() => setShowWarningModal(false)}
-                className="mt-4 w-full bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-lg"
-              >
-                닫기
-              </button>
-            </motion.div>
+            <div className="text-3xl font-bold text-orange-500">{stats.todayWarnings}</div>
+            <div className="text-sm text-gray-600">오늘 경고</div>
           </motion.div>
-        )}
-      </AnimatePresence>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white rounded-xl shadow-lg p-4 text-center"
+          >
+            <div className="text-3xl font-bold text-purple-500">{stats.todayBattles}</div>
+            <div className="text-sm text-gray-600">오늘 배틀</div>
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+            className="bg-white rounded-xl shadow-lg p-4 text-center"
+          >
+            <div className="text-3xl font-bold text-red-500">{stats.totalWarnings}</div>
+            <div className="text-sm text-gray-600">총 경고</div>
+          </motion.div>
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="bg-white rounded-xl shadow-lg p-4 text-center"
+          >
+            <div className="text-3xl font-bold text-blue-500">{stats.totalAdminLogs}</div>
+            <div className="text-sm text-gray-600">관리자 활동</div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 날짜 필터 */}
+      <div className="bg-white p-4 rounded-xl shadow-sm flex flex-wrap gap-4 items-center">
+        <span className="text-gray-600 font-medium">📅 기간 필터:</span>
+        <input
+          type="date"
+          value={dateFrom}
+          onChange={(e) => setDateFrom(e.target.value)}
+          className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        />
+        <span className="text-gray-400">~</span>
+        <input
+          type="date"
+          value={dateTo}
+          onChange={(e) => setDateTo(e.target.value)}
+          className="px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        />
+        <button
+          onClick={() => {
+            setDateFrom('');
+            setDateTo('');
+          }}
+          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-gray-600"
+        >
+          초기화
+        </button>
+      </div>
+
+      {/* 탭 네비게이션 */}
+      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+        <div className="flex border-b">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              className={`flex-1 px-4 py-3 text-center font-medium transition-colors ${
+                activeTab === tab.id
+                  ? 'bg-purple-500 text-white'
+                  : 'text-gray-600 hover:bg-purple-50'
+              }`}
+            >
+              {tab.label}
+              <span className="ml-2 px-2 py-0.5 bg-white/20 rounded-full text-xs">
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* 로그 내용 */}
+        <div className="p-4">
+          {isLoading ? (
+            <div className="text-center py-8">
+              <div className="animate-spin text-4xl mb-4">🔄</div>
+              <p className="text-gray-500">로그를 불러오는 중...</p>
+            </div>
+          ) : (
+            <AnimatePresence mode="wait">
+              {/* 경고 로그 */}
+              {activeTab === 'warning' && (
+                <motion.div
+                  key="warning"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="space-y-3 max-h-[500px] overflow-y-auto"
+                >
+                  {warningLogs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">경고 기록이 없습니다.</div>
+                  ) : (
+                    warningLogs.map((log) => (
+                      <div key={log.id} className="p-4 bg-orange-50 rounded-lg border border-orange-100">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-bold text-orange-700">{getWarningTypeLabel(log.action)}</span>
+                          <span className="text-xs text-gray-500">{formatDate(log.created_at)}</span>
+                        </div>
+                        <div className="text-sm text-gray-700 mb-1">
+                          <span className="font-medium">{log.user_name}</span>
+                        </div>
+                        <div className="text-sm text-gray-600 bg-white p-2 rounded">
+                          "{log.content}"
+                        </div>
+                        <div className="text-xs text-gray-400 mt-2">발송: {log.issued_by}</div>
+                      </div>
+                    ))
+                  )}
+                </motion.div>
+              )}
+
+              {/* 배틀 로그 */}
+              {activeTab === 'battle' && (
+                <motion.div
+                  key="battle"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="space-y-3 max-h-[500px] overflow-y-auto"
+                >
+                  {battleLogs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">배틀 기록이 없습니다.</div>
+                  ) : (
+                    battleLogs.map((log) => (
+                      <div key={log.id} className="p-4 bg-purple-50 rounded-lg border border-purple-100">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-3">
+                            <span className={`font-bold ${log.winner === 'attacker' ? 'text-green-600' : 'text-gray-600'}`}>
+                              {log.attacker}
+                            </span>
+                            <span className="text-purple-500 font-bold">⚔️ VS</span>
+                            <span className={`font-bold ${log.winner === 'defender' ? 'text-green-600' : 'text-gray-600'}`}>
+                              {log.defender}
+                            </span>
+                          </div>
+                          <span className="text-xs text-gray-500">{formatDate(log.created_at)}</span>
+                        </div>
+                        <div className="mt-2 text-sm text-gray-600">
+                          🏆 승자: <span className="font-bold text-green-600">
+                            {log.winner === 'attacker' ? log.attacker : log.defender}
+                          </span>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </motion.div>
+              )}
+
+              {/* 신규 가입 */}
+              {activeTab === 'users' && (
+                <motion.div
+                  key="users"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="space-y-3 max-h-[500px] overflow-y-auto"
+                >
+                  {recentUsers.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">최근 가입자가 없습니다.</div>
+                  ) : (
+                    recentUsers.map((user) => (
+                      <div key={user.id} className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+                        <div className="flex justify-between items-center">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold ${
+                              user.is_guest ? 'bg-gray-400' : 'bg-blue-500'
+                            }`}>
+                              {user.is_guest ? 'G' : user.display_name?.charAt(0) || 'U'}
+                            </div>
+                            <div>
+                              <div className="font-bold text-gray-800">{user.display_name}</div>
+                              <div className="text-xs text-gray-500">
+                                {user.email || '게스트 계정'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              user.is_guest ? 'bg-gray-200 text-gray-600' : 'bg-blue-200 text-blue-700'
+                            }`}>
+                              {user.is_guest ? '게스트' : '가입 회원'}
+                            </span>
+                            <div className="text-xs text-gray-500 mt-1">{formatDate(user.created_at)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </motion.div>
+              )}
+
+              {/* 관리자 활동 */}
+              {activeTab === 'admin' && (
+                <motion.div
+                  key="admin"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="space-y-3 max-h-[500px] overflow-y-auto"
+                >
+                  {adminLogs.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">관리자 활동 기록이 없습니다.</div>
+                  ) : (
+                    adminLogs.map((log) => (
+                      <div key={log.id} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <div className="flex justify-between items-start mb-2">
+                          <span className="font-bold text-gray-700">{getActionLabel(log.action)}</span>
+                          <span className="text-xs text-gray-500">{formatDate(log.created_at)}</span>
+                        </div>
+                        {log.details && (
+                          <div className="text-sm text-gray-600 bg-white p-2 rounded mb-2">
+                            {log.details}
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-400">
+                          관리자: {log.admin_email}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
