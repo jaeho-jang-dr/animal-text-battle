@@ -1,6 +1,4 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { geminiStats } from "./gemini-stats";
-
 
 // Initialize Gemini API - FORCE reload from environment
 const apiKey = process.env.GEMINI_API_KEY?.trim();
@@ -15,229 +13,55 @@ if (!apiKey) {
 
 const genAI = new GoogleGenerativeAI(apiKey || '');
 
-// ============================================
-// 🚀 RATE LIMITING & CACHING SYSTEM
-// ============================================
-
-// In-memory cache for responses (simple LRU-like cache)
-interface CacheEntry {
-    response: string;
-    timestamp: number;
-}
-
-const responseCache = new Map<string, CacheEntry>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
-
-// Rate limiter: Track API calls to avoid hitting 15 RPM limit
-const rateLimiter = {
-    calls: [] as number[],
-    maxCallsPerMinute: 12, // Conservative limit (below 15 RPM)
-
-    canMakeCall(): boolean {
-        const now = Date.now();
-        const oneMinuteAgo = now - 60 * 1000;
-
-        // Remove calls older than 1 minute
-        this.calls = this.calls.filter(time => time > oneMinuteAgo);
-
-        return this.calls.length < this.maxCallsPerMinute;
-    },
-
-    recordCall(): void {
-        this.calls.push(Date.now());
-    },
-
-    async waitForSlot(): Promise<void> {
-        while (!this.canMakeCall()) {
-            geminiStats.recordRateLimitHit(); // Track rate limit hit
-            const oldestCall = this.calls[0];
-            const waitTime = (oldestCall + 60 * 1000) - Date.now() + 1000; // +1s buffer
-            console.log(`[RateLimiter] 대기 중... ${Math.ceil(waitTime / 1000)}초 후 재시도`);
-            await sleep(waitTime);
-        }
-    }
-};
-
-// Request queue to serialize API calls
-let requestQueue = Promise.resolve();
-
-function sleep(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// Generate cache key from prompt
-function getCacheKey(prompt: string, isJson: boolean): string {
-    return `${isJson ? 'json' : 'text'}:${prompt.substring(0, 200)}`;
-}
-
-// Check cache for existing response
-function getCachedResponse(cacheKey: string): string | null {
-    const cached = responseCache.get(cacheKey);
-    if (cached && (Date.now() - cached.timestamp) < CACHE_TTL) {
-        console.log(`[Cache] ✅ 캐시 히트! (${Math.floor((Date.now() - cached.timestamp) / 1000)}초 전)`);
-        geminiStats.recordCacheHit(); // Track cache hit
-        return cached.response;
-    }
-    return null;
-}
-
-// Save response to cache
-function cacheResponse(cacheKey: string, response: string): void {
-    responseCache.set(cacheKey, {
-        response,
-        timestamp: Date.now()
-    });
-
-    // Simple cache cleanup: remove old entries if cache is too large
-    if (responseCache.size > 100) {
-        const oldestKey = Array.from(responseCache.entries())
-            .sort((a, b) => a[1].timestamp - b[1].timestamp)[0][0];
-        responseCache.delete(oldestKey);
-    }
-}
-
-// Exponential backoff retry logic
-async function retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    maxRetries: number = 3,
-    baseDelay: number = 1000
-): Promise<T> {
-    let lastError: Error | null = null;
-
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-        try {
-            return await fn();
-        } catch (error: any) {
-            lastError = error;
-            const msg = error.message || "";
-
-            // Only retry on rate limit or server errors
-            if (msg.includes("429") || msg.includes("503") || msg.includes("RESOURCE_EXHAUSTED")) {
-                const delay = baseDelay * Math.pow(2, attempt);
-                console.log(`[Retry] 시도 ${attempt + 1}/${maxRetries} 실패. ${delay}ms 후 재시도...`);
-                await sleep(delay);
-                continue;
-            }
-
-            // Don't retry on other errors
-            throw error;
-        }
-    }
-
-    throw lastError || new Error("재시도 실패");
-}
-
 // Helper to get response text safely using ONLY the working model
 async function generateWithFallback(prompt: string, isJson: boolean = false): Promise<string> {
-    // Check cache first
-    const cacheKey = getCacheKey(prompt, isJson);
-    const cached = getCachedResponse(cacheKey);
-    if (cached) {
-        return cached;
-    }
-
-    // Queue the request to avoid parallel calls
-    return new Promise((resolve, reject) => {
-        requestQueue = requestQueue.then(async () => {
-            try {
-                // Record that we're attempting a call
-                geminiStats.recordCall();
-
-                // Wait for rate limiter slot
-                await rateLimiter.waitForSlot();
-
-                console.log(`[Gemini] 🚀 API 호출 시작 (JSON: ${isJson})`);
-                console.log(`[Gemini] 현재 분당 호출 수: ${rateLimiter.calls.length}/${rateLimiter.maxCallsPerMinute}`);
-
-                // 모델 목록 - 2.0 이상만 사용, 첫 번째 실패 시 다음 모델 시도
-                const modelNames = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-pro"];
-                let lastError: Error | null = null;
-
-                for (const currentModel of modelNames) {
-                    try {
-                        console.log(`[Gemini] 🔄 모델 시도: ${currentModel}`);
-
-                        const model = genAI.getGenerativeModel({
-                            model: currentModel,
-                            generationConfig: {
-                                maxOutputTokens: 300,
-                                responseMimeType: isJson ? "application/json" : "text/plain"
-                            }
-                        });
-
-                        const apiResult = isJson
-                            ? await model.generateContent({
-                                contents: [{ role: "user", parts: [{ text: prompt }] }]
-                            })
-                            : await model.generateContent(prompt);
-
-                        const response = await apiResult.response;
-                        const result = response.text();
-
-                        // 성공
-                        rateLimiter.recordCall();
-                        geminiStats.recordSuccess();
-                        cacheResponse(cacheKey, result);
-                        console.log(`[Gemini] ✅ ${currentModel} 성공! (응답 길이: ${result.length}자)`);
-                        resolve(result);
-                        return;
-                    } catch (modelError: any) {
-                        console.error(`[Gemini] ${currentModel} 실패:`, modelError.message);
-                        lastError = modelError;
-                        // 다음 모델 시도
-                        continue;
-                    }
-                }
-
-                // 모든 모델 실패
-                throw lastError || new Error("모든 AI 모델 호출 실패");
-            } catch (error: any) {
-                console.error(`[Gemini] ❌ 실패:`, error);
-                console.error(`[Gemini] Error details:`, {
-                    message: error.message,
-                    stack: error.stack,
-                    name: error.name,
-                    status: error.status,
-                    statusText: error.statusText
-                });
-
-                // Handle specific error codes
-                const msg = error.message || "";
-                const statusCode = error.status || (msg.match(/\d{3}/)?.[0]);
-                let errorMsg = "";
-
-                if (msg.includes("503") || statusCode === "503") {
-                    errorMsg = "🔴 AI 서버가 일시적으로 과부하입니다. 잠시 후 다시 시도해주세요.";
-                } else if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || statusCode === "429") {
-                    errorMsg = "⏱️ API 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
-                } else if (msg.includes("404") || statusCode === "404") {
-                    errorMsg = "🔍 AI 모델을 찾을 수 없습니다. 잠시 후 다시 시도해주세요.";
-                } else if (msg.includes("API_KEY_INVALID") || msg.includes("invalid API key")) {
-                    errorMsg = "🚫 API 키가 유효하지 않습니다. 키를 확인해주세요.";
-                } else if (msg.includes("leaked") || msg.includes("compromised")) {
-                    errorMsg = "🚫 API 키가 노출되어 차단되었습니다. 새 키가 필요합니다.";
-                } else if (msg.includes("403") || statusCode === "403") {
-                    // 403은 여러 이유가 있을 수 있음 - 실제 메시지 포함
-                    errorMsg = `⚠️ API 접근 거부: ${msg.substring(0, 100)}`;
-                } else if (msg.includes("PERMISSION_DENIED")) {
-                    errorMsg = "⚠️ API 권한이 없습니다. Gemini API 활성화를 확인해주세요.";
-                } else {
-                    errorMsg = `AI 오류: ${msg.substring(0, 100)}`;
-                }
-
-                // Record failure with error message
-                geminiStats.recordFailure(errorMsg);
-
-                reject(new Error(errorMsg));
-            }
+    // Using gemini-1.5-flash for better free tier quota (2.0-flash has very limited quota)
+    const modelName = "gemini-1.5-flash";
+    
+    console.log(`[Gemini] Using model: ${modelName} (JSON: ${isJson})`);
+    console.log(`[Gemini] API Key being used: ${apiKey?.substring(0, 10)}...`);
+    
+    try {
+        const model = genAI.getGenerativeModel({
+            model: modelName,
+            generationConfig: isJson ? { responseMimeType: "application/json" } : undefined
         });
-    });
+
+        const result = isJson
+            ? await model.generateContent({
+                contents: [{ role: "user", parts: [{ text: prompt }] }]
+                })
+            : await model.generateContent(prompt);
+
+        const response = await result.response;
+        const text = response.text();
+        return text;
+    } catch (error: any) {
+        console.error(`[Gemini] Model ${modelName} failed:`, error);
+        console.error(`[Gemini] Error details:`, {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+        });
+        
+        // Handle specific error codes if possible
+        const msg = error.message || "";
+        if (msg.includes("503") || msg.includes("429")) {
+            throw new Error("AI 서버가 지금 매우 바쁩니다 (503/429). 잠시 후 다시 시도해주세요.");
+        } else if (msg.includes("404")) {
+            throw new Error("AI 모델을 찾을 수 없습니다 (404). API 키 권한을 확인해주세요.");
+        } else if (msg.includes("403") || msg.includes("leaked")) {
+            throw new Error(`AI API 키가 차단되었습니다 (403). 현재 키: ${apiKey?.substring(0, 10)}...`);
+        }
+        
+        throw new Error(`AI 생성 오류: ${msg}`);
+    }
 }
 
 export async function generateBattleText(animalName: string, characterName: string): Promise<string> {
     console.log("[generateBattleText] Starting generation for:", { animalName, characterName });
     console.log("[generateBattleText] API Key check:", apiKey ? `Present (${apiKey.substring(0, 10)}...)` : "MISSING");
-
+    
     if (!apiKey) {
         throw new Error("API Key가 설정되지 않았습니다. (.env.local 확인 필요)");
     }
@@ -281,13 +105,13 @@ export async function generateBattleText(animalName: string, characterName: stri
                 text = text.substring(0, 98) + "...";
             }
         }
-
+        
         console.log("[generateBattleText] Success! Generated text:", text);
         return text;
     } catch (error: any) {
         console.error("[generateBattleText] Error:", error);
         // Propagate the error message clearly
-        throw error;
+        throw error; 
     }
 }
 
@@ -336,7 +160,7 @@ export async function judgeBattleWithAI(
         const parsed = JSON.parse(jsonText);
         // Validate response structure slightly
         if (!parsed.winner || !parsed.judgment) {
-            throw new Error("Invalid AI response structure");
+             throw new Error("Invalid AI response structure");
         }
         return parsed;
     } catch (error) {
