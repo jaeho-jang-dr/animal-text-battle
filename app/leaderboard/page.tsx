@@ -145,7 +145,7 @@ function LeaderboardContent() {
           animalName: data.animal?.name || '?',
           animalIcon: data.animal?.emoji || '🐾',
           animalCategory: data.animal?.category || 'unknown',
-          playerName: data.user?.displayName || 'Unknown',
+          playerName: data.user?.displayName || data.userId || 'Unknown',
           isGuest: data.user?.isGuest || false,
           isBot: data.isBot,
           baseScore: data.baseScore,
@@ -371,8 +371,11 @@ function LeaderboardContent() {
         result: {
           winner: winner,
           winnerId: isWin ? attacker.id : defender.id,
-          judgment: "AI 판정: " + battleResult.judgment,
-          reasoning: battleResult.reasoning
+          judgment: "AI 판정: " + (battleResult.judgment || "판정 결과 없음"),
+          reasoning: battleResult.reasoning,
+          attackerScoreChange: attackerScoreChange,
+          attackerEloChange: attackerEloChange,
+          encouragement: battleResult.encouragement
         },
         updatedStats: {
           attacker: {

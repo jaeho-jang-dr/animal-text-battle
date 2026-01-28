@@ -98,7 +98,11 @@ export default function HomePage() {
       await guestLogin();
     } catch (error: any) {
       console.error('Guest login failed:', error);
-      alert('게스트 로그인 실패: ' + error.message);
+      if (error.code === 'auth/operation-not-allowed' || error.code === 'auth/admin-restricted-operation') {
+        alert('⚠️ 게스트(익명) 로그인이 설정되지 않았습니다.\nFirebase Console > Build > Authentication > Sign-in method에서 "익명(Anonymous)" 공급업체를 사용 설정해주세요.');
+      } else {
+        alert('게스트 로그인 실패: ' + error.message);
+      }
     }
   };
 
