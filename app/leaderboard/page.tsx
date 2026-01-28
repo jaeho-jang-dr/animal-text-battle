@@ -126,35 +126,6 @@ function LeaderboardContent() {
 
       const querySnapshot = await getDocs(q);
       
-      // Collect unique User IDs to fetch profiles for friendly names
-      const uniqueUserIds = new Set<string>();
-      querySnapshot.docs.forEach(d => {
-        const dData = d.data();
-        if (dData.userId && !dData.isBot) uniqueUserIds.add(dData.userId);
-      });
-
-      const userMap: Record<string, string> = {};
-      
-      // Fetch user docs in parallel
-      if (uniqueUserIds.size > 0) {
-        try {
-          const userDocs = await Promise.all(
-            Array.from(uniqueUserIds).map(uid => getDoc(doc(db, 'users', uid)))
-          );
-          userDocs.forEach(ud => {
-            if (ud.exists()) {
-              const uData = ud.data() as User;
-              let name = '익명';
-              if (uData.displayName) name = uData.displayName;
-              else if (uData.email) name = uData.email.split('@')[0];
-              else if (uData.isGuest) name = '게스트';
-              userMap[ud.id] = name;
-            }
-          });
-        } catch (err) {
-          console.error("Error fetching user profiles:", err);
-        }
-      }
 
       const fetchedEntries: LeaderboardEntry[] = [];
       let rankCounter = 1;
@@ -172,8 +143,8 @@ function LeaderboardContent() {
         if (data.isBot) {
           resolvedPlayerName = 'NPC';
         } else {
-          // Use fetched name, or fall back to truncated ID if not found
-          resolvedPlayerName = userMap[data.userId] || (data.userId ? data.userId.slice(0, 8) : 'Unknown');
+          // Revert to simple ID display as requested (removing friendly name resolution)
+          resolvedPlayerName = (data as any).user?.displayName || data.userId || 'Unknown';
         }
 
         fetchedEntries.push({
