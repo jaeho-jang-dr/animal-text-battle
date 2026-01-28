@@ -1,5 +1,7 @@
 {
     "recommendations": [
-        "chatgwajang.claude-code-assistant-wsl"
+        "chatgwajang.claude-code-assistant-wsl",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
     ]
 }
