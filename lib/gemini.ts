@@ -11,8 +11,8 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey || '');
 
 // Model for text generation (Flash is faster and cheaper, Pro is smarter)
-// Switched to gemini-1.5-flash for better stability in production
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// User requested to keep high version. Using gemini-2.0-flash-exp (preview).
+const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
 
 export async function generateBattleText(animalName: string, characterName: string): Promise<string> {
     if (!apiKey) {
