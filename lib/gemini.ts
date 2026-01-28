@@ -146,62 +146,83 @@ async function generateWithFallback(prompt: string, isJson: boolean = false): Pr
                 // Wait for rate limiter slot
                 await rateLimiter.waitForSlot();
 
-                // Using gemini-2.0-flash as requested (Fast & Powerful)
-                const modelName = "gemini-2.0-flash";
-
-                console.log(`[Gemini] 🚀 API 호출 시작: ${modelName} (JSON: ${isJson})`);
+                console.log(`[Gemini] 🚀 API 호출 시작 (JSON: ${isJson})`);
                 console.log(`[Gemini] 현재 분당 호출 수: ${rateLimiter.calls.length}/${rateLimiter.maxCallsPerMinute}`);
 
-                const result = await retryWithBackoff(async () => {
-                    const model = genAI.getGenerativeModel({
-                        model: modelName,
-                        generationConfig: {
-                            maxOutputTokens: 300, // Speed up generation
-                            responseMimeType: isJson ? "application/json" : "text/plain"
-                        }
-                    });
+                // 모델 목록 - 2.0 이상만 사용, 첫 번째 실패 시 다음 모델 시도
+                const modelNames = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-pro"];
+                let lastError: Error | null = null;
 
-                    const apiResult = isJson
-                        ? await model.generateContent({
-                            contents: [{ role: "user", parts: [{ text: prompt }] }]
-                        })
-                        : await model.generateContent(prompt);
+                for (const currentModel of modelNames) {
+                    try {
+                        console.log(`[Gemini] 🔄 모델 시도: ${currentModel}`);
 
-                    const response = await apiResult.response;
-                    return response.text();
-                });
+                        const model = genAI.getGenerativeModel({
+                            model: currentModel,
+                            generationConfig: {
+                                maxOutputTokens: 300,
+                                responseMimeType: isJson ? "application/json" : "text/plain"
+                            }
+                        });
 
-                // Record successful call
-                rateLimiter.recordCall();
-                geminiStats.recordSuccess();
+                        const apiResult = isJson
+                            ? await model.generateContent({
+                                contents: [{ role: "user", parts: [{ text: prompt }] }]
+                            })
+                            : await model.generateContent(prompt);
 
-                // Cache the response
-                cacheResponse(cacheKey, result);
+                        const response = await apiResult.response;
+                        const result = response.text();
 
-                console.log(`[Gemini] ✅ 성공! (응답 길이: ${result.length}자)`);
-                resolve(result);
+                        // 성공
+                        rateLimiter.recordCall();
+                        geminiStats.recordSuccess();
+                        cacheResponse(cacheKey, result);
+                        console.log(`[Gemini] ✅ ${currentModel} 성공! (응답 길이: ${result.length}자)`);
+                        resolve(result);
+                        return;
+                    } catch (modelError: any) {
+                        console.error(`[Gemini] ${currentModel} 실패:`, modelError.message);
+                        lastError = modelError;
+                        // 다음 모델 시도
+                        continue;
+                    }
+                }
+
+                // 모든 모델 실패
+                throw lastError || new Error("모든 AI 모델 호출 실패");
             } catch (error: any) {
                 console.error(`[Gemini] ❌ 실패:`, error);
                 console.error(`[Gemini] Error details:`, {
                     message: error.message,
                     stack: error.stack,
-                    name: error.name
+                    name: error.name,
+                    status: error.status,
+                    statusText: error.statusText
                 });
 
                 // Handle specific error codes
                 const msg = error.message || "";
+                const statusCode = error.status || (msg.match(/\d{3}/)?.[0]);
                 let errorMsg = "";
 
-                if (msg.includes("503")) {
-                    errorMsg = "🔴 AI 서버가 일시적으로 사용 불가능합니다. 잠시 후 다시 시도해주세요.";
-                } else if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
-                    errorMsg = "⏱️ API 사용 한도에 도달했습니다. 1분 후 다시 시도해주세요.";
-                } else if (msg.includes("404")) {
-                    errorMsg = "🔍 AI 모델을 찾을 수 없습니다. API 키 권한을 확인해주세요.";
-                } else if (msg.includes("403") || msg.includes("leaked")) {
-                    errorMsg = `🚫 API 키가 차단되었습니다. 새 키가 필요합니다.`;
+                if (msg.includes("503") || statusCode === "503") {
+                    errorMsg = "🔴 AI 서버가 일시적으로 과부하입니다. 잠시 후 다시 시도해주세요.";
+                } else if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || statusCode === "429") {
+                    errorMsg = "⏱️ API 요청이 너무 많습니다. 잠시 후 다시 시도해주세요.";
+                } else if (msg.includes("404") || statusCode === "404") {
+                    errorMsg = "🔍 AI 모델을 찾을 수 없습니다. 잠시 후 다시 시도해주세요.";
+                } else if (msg.includes("API_KEY_INVALID") || msg.includes("invalid API key")) {
+                    errorMsg = "🚫 API 키가 유효하지 않습니다. 키를 확인해주세요.";
+                } else if (msg.includes("leaked") || msg.includes("compromised")) {
+                    errorMsg = "🚫 API 키가 노출되어 차단되었습니다. 새 키가 필요합니다.";
+                } else if (msg.includes("403") || statusCode === "403") {
+                    // 403은 여러 이유가 있을 수 있음 - 실제 메시지 포함
+                    errorMsg = `⚠️ API 접근 거부: ${msg.substring(0, 100)}`;
+                } else if (msg.includes("PERMISSION_DENIED")) {
+                    errorMsg = "⚠️ API 권한이 없습니다. Gemini API 활성화를 확인해주세요.";
                 } else {
-                    errorMsg = `AI 생성 오류: ${msg}`;
+                    errorMsg = `AI 오류: ${msg.substring(0, 100)}`;
                 }
 
                 // Record failure with error message
