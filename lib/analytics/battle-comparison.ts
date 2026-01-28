@@ -101,30 +101,43 @@ export class BattleComparisonAnalyzer {
     };
   }
 
-  // 통계 비교
+  // 통계 비교 (최적화됨)
   static getStatComparison(char1Id: string, char2Id: string): StatComparison {
-    const getCharStats = (charId: string) => {
-      const basicStats = db.prepare(`
-        SELECT 
-          COUNT(*) as total_battles,
-          SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as wins,
-          SUM(CASE WHEN winner_id != ? AND winner_id IS NOT NULL THEN 1 ELSE 0 END) as losses
-        FROM battles
-        WHERE (attacker_id = ? OR defender_id = ?) AND winner_id IS NOT NULL
-      `).get(charId, charId, charId, charId) as any;
-
-      const avgScoreChange = db.prepare(`
-        SELECT AVG(
+    // 1. 기본 통계 및 평균 점수 변화 (한 번의 쿼리로 두 캐릭터 모두 조회)
+    const statsQuery = db.prepare(`
+      SELECT 
+        c.id,
+        COUNT(b.id) as total_battles,
+        SUM(CASE WHEN b.winner_id = c.id THEN 1 ELSE 0 END) as wins,
+        SUM(CASE WHEN b.winner_id != c.id AND b.winner_id IS NOT NULL THEN 1 ELSE 0 END) as losses,
+        AVG(
           CASE 
-            WHEN attacker_id = ? THEN attacker_score_change
-            ELSE defender_score_change
+            WHEN b.attacker_id = c.id THEN b.attacker_score_change
+            ELSE b.defender_score_change
           END
         ) as avg_change
-        FROM battles
-        WHERE attacker_id = ? OR defender_id = ?
-      `).get(charId, charId, charId) as any;
+      FROM characters c
+      LEFT JOIN battles b ON (b.attacker_id = c.id OR b.defender_id = c.id) AND b.winner_id IS NOT NULL
+      WHERE c.id IN (?, ?)
+      GROUP BY c.id
+    `).all(char1Id, char2Id) as any[];
 
-      // 현재 연승/연패
+    // 데이터 매핑
+    const statsMap = new Map(statsQuery.map(s => [s.id, s]));
+
+    // 2. 랭킹 조회 (한 번의 쿼리로 처리)
+    const ranks = db.prepare(`
+      SELECT 
+        id,
+        (SELECT COUNT(*) + 1 FROM characters c2 WHERE c2.elo_score > c1.elo_score) as rank
+      FROM characters c1
+      WHERE id IN (?, ?)
+    `).all(char1Id, char2Id) as any[];
+
+    const rankMap = new Map(ranks.map(r => [r.id, r.rank]));
+
+    // 3. 연승/연패 계산을 위한 최근 배틀 조회 (각각 조회하되 로직 재사용)
+    const getStreak = (charId: string) => {
       const recentBattles = db.prepare(`
         SELECT winner_id
         FROM battles
@@ -149,31 +162,31 @@ export class BattleComparisonAnalyzer {
           tempStreak = 0;
         }
       }
+      return { currentStreak, bestStreak };
+    };
 
-      // 랭킹 (ELO 기준)
-      const ranking = db.prepare(`
-        SELECT COUNT(*) + 1 as rank
-        FROM characters
-        WHERE elo_score > (SELECT elo_score FROM characters WHERE id = ?)
-      `).get(charId) as any;
+    const buildCharStats = (charId: string) => {
+      const s = statsMap.get(charId) || { total_battles: 0, wins: 0, losses: 0, avg_change: 0 };
+      const rank = rankMap.get(charId) || 0;
+      const { currentStreak, bestStreak } = getStreak(charId);
 
       return {
-        totalBattles: basicStats.total_battles,
-        wins: basicStats.wins,
-        losses: basicStats.losses,
-        winRate: basicStats.total_battles > 0 
-          ? Math.round((basicStats.wins / basicStats.total_battles) * 100)
+        totalBattles: s.total_battles,
+        wins: s.wins,
+        losses: s.losses,
+        winRate: s.total_battles > 0 
+          ? Math.round((s.wins / s.total_battles) * 100)
           : 0,
-        averageScoreChange: Math.round(avgScoreChange.avg_change || 0),
+        averageScoreChange: Math.round(s.avg_change || 0),
         currentStreak,
         bestStreak,
-        rank: ranking.rank
+        rank
       };
     };
 
     return {
-      character1: getCharStats(char1Id),
-      character2: getCharStats(char2Id)
+      character1: buildCharStats(char1Id),
+      character2: buildCharStats(char2Id)
     };
   }
 

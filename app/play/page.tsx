@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { Character, Animal } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBattleSound } from '../../hooks/useBattleSound';
@@ -11,14 +13,15 @@ import CharacterCard from '../../components/CharacterCard';
 import BottomNav from '../../components/BottomNav';
 
 export default function PlayPage() {
-  const { user, firebaseUser, isAuthenticated } = useAuth();
+  const { user, firebaseUser } = useAuth();
   const { playBattleStartSound, playVictorySound, playDefeatSound } = useBattleSound();
   const router = useRouter();
 
   // State
   const [characters, setCharacters] = useState<Character[]>([]);
   const [animals, setAnimals] = useState<Animal[]>([]);
-  
+  const [error, setError] = useState<string | null>(null);
+
   // Removed opponents, selectedOpponent, battleResult, viewState as we are simplifying the flow
   // const [viewState, setViewState] = useState<'dashboard' | 'select-opponent' | 'battle'>('dashboard');
   // const [selectedCharacter, setSelectedCharacter] = useState<Character | null>(null);
@@ -28,16 +31,29 @@ export default function PlayPage() {
   const [lastRefresh, setLastRefresh] = useState(0); // Trigger re-fetch
 
   // 1. Auth Check & Data Load
+  // 1. Auth Check & Data Load
   useEffect(() => {
-    if (!isAuthenticated && !user) return; // Wait for auth
+    if (!user) return; // Wait for auth
 
-    // Load Characters
-    fetch(`/api/characters?userId=${user?.id}`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) setCharacters(data.data);
-      })
-      .catch(err => console.error("Load chars error:", err));
+    const fetchCharacters = async () => {
+      try {
+        const q = query(
+          collection(db, 'characters'),
+          where('userId', '==', user?.id),
+          where('isActive', '==', true)
+        );
+
+        const querySnapshot = await getDocs(q);
+        const chars = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character));
+        setCharacters(chars);
+        setError(null);
+      } catch (err) {
+        console.error("Load chars error:", err);
+        setError("데이터를 불러올 수 없습니다. (Firestore Error)");
+      }
+    };
+
+    fetchCharacters();
 
     // Load Animals (Cached usually but fine to fetch)
     fetch('/api/animals')
@@ -47,7 +63,7 @@ export default function PlayPage() {
       })
       .catch(err => console.error("Load animals error:", err));
 
-  }, [user, isAuthenticated, lastRefresh]);
+  }, [user, lastRefresh]);
 
   // 2. Battle Logic
   const handleBattleClick = (char: Character) => {
@@ -57,7 +73,7 @@ export default function PlayPage() {
   // 3. Update Battle Text
   const handleUpdateBattleText = async (characterId: string, newText: string) => {
     if (!firebaseUser) return;
-    
+
     try {
       const token = await firebaseUser.getIdToken();
       const res = await fetch(`/api/characters/${characterId}`, {
@@ -68,19 +84,20 @@ export default function PlayPage() {
         },
         body: JSON.stringify({ battleText: newText })
       });
-      
+
       const data = await res.json();
       if (data.success) {
         // Update local state
-        setCharacters(prev => prev.map(c => 
+        setCharacters(prev => prev.map(c =>
           c.id === characterId ? { ...c, battleText: newText } : c
         ));
+        setError(null);
       } else {
-        alert(data.error || "대사 수정 실패");
+        setError(data.error || "대사 수정 실패");
       }
     } catch (error) {
       console.error("Update battle text error:", error);
-      alert("대사 수정 중 오류가 발생했습니다.");
+      setError("대사 수정 중 오류가 발생했습니다.");
     }
   };
 
@@ -104,6 +121,17 @@ export default function PlayPage() {
       </div>
 
       <main className="px-4 py-4 max-w-7xl mx-auto">
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-md"
+            role="alert"
+          >
+            <p className="font-bold">오류 발생</p>
+            <p>{error}</p>
+          </motion.div>
+        )}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

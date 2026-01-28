@@ -3,37 +3,10 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-
-interface Animal {
-  id: number;
-  name: string;
-  korean_name: string;
-  category: string;
-  sub_category: string;
-  emoji: string;
-  description: string;
-  kid_description: string;
-  habitat: string;
-  food: string;
-  speciality: string;
-  fun_fact: string;
-  power: number;
-  defense: number;
-  speed: number;
-  intelligence: number;
-  battle_cry: string;
-  rarity: string;
-  unlock_level: number;
-  abilities?: string;
-  color?: string;
-}
-
-interface Character {
-  id: number;
-  name: string;
-  animal: Animal;
-}
-
+import { doc, setDoc, collection, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
+import { v4 as uuidv4 } from 'uuid';
+import { Character, Animal } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 
 export default function CreateCharacterPage() {
@@ -73,19 +46,20 @@ export default function CreateCharacterPage() {
   }, [animalId]);
 
   const fetchUserCharacters = async () => {
-    if (!firebaseUser) return;
+    if (!user) return;
     try {
-      const token = await firebaseUser.getIdToken();
-      const response = await fetch('/api/characters', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await response.json();
-      if (data.success) {
-        setExistingCharacters(data.data || []);
-        if (data.data && data.data.length >= 3) {
-          alert('캐릭터는 최대 3개까지만 만들 수 있어요!');
-          router.push('/play');
-        }
+      const q = query(
+        collection(db, 'characters'),
+        where('userId', '==', user.id),
+        where('isActive', '==', true)
+      );
+      const snapshot = await getDocs(q);
+      const chars = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character));
+
+      setExistingCharacters(chars);
+      if (chars.length >= 3) {
+        alert('캐릭터는 최대 3개까지만 만들 수 있어요!');
+        router.push('/play');
       }
     } catch (error) {
       console.error('Failed to fetch characters:', error);
@@ -132,31 +106,55 @@ export default function CreateCharacterPage() {
     setError('');
 
     try {
-      if (!firebaseUser) throw new Error("Authentication lost");
-      const token = await firebaseUser.getIdToken();
+      if (!user) throw new Error("로그인이 필요합니다.");
 
-      const response = await fetch('/api/characters', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          characterName: characterName,
-          animalId: selectedAnimal.id,
-          battleText: battleText
-        })
-      });
+      const characterId = uuidv4();
+      const newCharacter = {
+        id: characterId,
+        userId: user.id,
+        animalId: selectedAnimal.id,
+        characterName,
+        battleText,
+        // Default stats
+        baseScore: 1000,
+        eloScore: 1000,
+        wins: 0,
+        losses: 0,
+        isActive: true,
+        activeBattlesToday: 0,
+        lastBattleReset: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        // Embedded animal data
+        animal: {
+          id: selectedAnimal.id,
+          name: selectedAnimal.name,
+          korean_name: selectedAnimal.korean_name,
+          category: selectedAnimal.category,
+          sub_category: selectedAnimal.sub_category,
+          emoji: selectedAnimal.emoji,
+          description: selectedAnimal.description,
+          kid_description: selectedAnimal.kid_description,
+          habitat: selectedAnimal.habitat,
+          food: selectedAnimal.food,
+          speciality: selectedAnimal.speciality,
+          fun_fact: selectedAnimal.fun_fact,
+          power: selectedAnimal.power || 50,
+          defense: selectedAnimal.defense || 50,
+          speed: selectedAnimal.speed || 50,
+          intelligence: selectedAnimal.intelligence || 50,
+          battle_cry: selectedAnimal.battle_cry,
+          rarity: selectedAnimal.rarity,
+          unlock_level: selectedAnimal.unlock_level
+        }
+      };
 
-      const data = await response.json();
-      console.log("Creation response:", data);
+      await setDoc(doc(db, 'characters', characterId), newCharacter);
+      console.log("Character created successfully");
 
-      if (data.success) {
-        // Force refresh user data or redirect
-        await router.push('/play');
-      } else {
-        throw new Error(data.error || '캐릭터 생성에 실패했습니다.');
-      }
+      // Force refresh user data or redirect
+      await router.push('/play');
+
     } catch (error: any) {
       console.error('Failed to create character:', error);
       alert(error.message || '캐릭터 생성 중 오류가 발생했습니다.');
@@ -271,67 +269,67 @@ export default function CreateCharacterPage() {
                     <p className="text-gray-600 mt-2">{selectedAnimal.description}</p>
                   </div>
 
-                    {/* 능력치 표시 */}
-                    <div className="mt-6 grid grid-cols-2 gap-3">
-                      <div className="bg-red-100 rounded-lg p-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-red-700">⚔️ 공격력</span>
-                          <span className="font-bold text-red-800">{selectedAnimal.power}</span>
-                        </div>
-                        <div className="w-full bg-red-200 rounded-full h-1.5 mt-1">
-                          <div
-                            className="bg-red-500 h-1.5 rounded-full"
-                            style={{ width: `${selectedAnimal.power}%` }}
-                          ></div>
-                        </div>
+                  {/* 능력치 표시 */}
+                  <div className="mt-6 grid grid-cols-2 gap-3">
+                    <div className="bg-red-100 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-red-700">⚔️ 공격력</span>
+                        <span className="font-bold text-red-800">{selectedAnimal.power}</span>
                       </div>
-
-                      <div className="bg-orange-100 rounded-lg p-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-orange-700">🛡️ 방어력</span>
-                          <span className="font-bold text-orange-800">{selectedAnimal.defense}</span>
-                        </div>
-                        <div className="w-full bg-orange-200 rounded-full h-1.5 mt-1">
-                          <div
-                            className="bg-orange-500 h-1.5 rounded-full"
-                            style={{ width: `${selectedAnimal.defense}%` }}
-                          ></div>
-                        </div>
-                      </div>
-
-                      <div className="bg-blue-100 rounded-lg p-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-blue-700">🏃 속도</span>
-                          <span className="font-bold text-blue-800">{selectedAnimal.speed}</span>
-                        </div>
-                        <div className="w-full bg-blue-200 rounded-full h-1.5 mt-1">
-                          <div
-                            className="bg-blue-500 h-1.5 rounded-full"
-                            style={{ width: `${selectedAnimal.speed}%` }}
-                          ></div>
-                        </div>
-                      </div>
-
-                      <div className="bg-green-100 rounded-lg p-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium text-green-700">🧠 지능</span>
-                          <span className="font-bold text-green-800">{selectedAnimal.intelligence}</span>
-                        </div>
-                        <div className="w-full bg-green-200 rounded-full h-1.5 mt-1">
-                          <div
-                            className="bg-green-500 h-1.5 rounded-full"
-                            style={{ width: `${selectedAnimal.intelligence}%` }}
-                          ></div>
-                        </div>
+                      <div className="w-full bg-red-200 rounded-full h-1.5 mt-1">
+                        <div
+                          className="bg-red-500 h-1.5 rounded-full"
+                          style={{ width: `${selectedAnimal.power}%` }}
+                        ></div>
                       </div>
                     </div>
 
-                    <div className="mt-3 text-center text-sm">
-                      <span className="text-gray-600">총 능력치: </span>
-                      <span className="font-bold text-gray-800">
-                        {selectedAnimal.power + selectedAnimal.defense + selectedAnimal.speed + selectedAnimal.intelligence}
-                      </span>
+                    <div className="bg-orange-100 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-orange-700">🛡️ 방어력</span>
+                        <span className="font-bold text-orange-800">{selectedAnimal.defense}</span>
+                      </div>
+                      <div className="w-full bg-orange-200 rounded-full h-1.5 mt-1">
+                        <div
+                          className="bg-orange-500 h-1.5 rounded-full"
+                          style={{ width: `${selectedAnimal.defense}%` }}
+                        ></div>
+                      </div>
                     </div>
+
+                    <div className="bg-blue-100 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-blue-700">🏃 속도</span>
+                        <span className="font-bold text-blue-800">{selectedAnimal.speed}</span>
+                      </div>
+                      <div className="w-full bg-blue-200 rounded-full h-1.5 mt-1">
+                        <div
+                          className="bg-blue-500 h-1.5 rounded-full"
+                          style={{ width: `${selectedAnimal.speed}%` }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div className="bg-green-100 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-green-700">🧠 지능</span>
+                        <span className="font-bold text-green-800">{selectedAnimal.intelligence}</span>
+                      </div>
+                      <div className="w-full bg-green-200 rounded-full h-1.5 mt-1">
+                        <div
+                          className="bg-green-500 h-1.5 rounded-full"
+                          style={{ width: `${selectedAnimal.intelligence}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 text-center text-sm">
+                    <span className="text-gray-600">총 능력치: </span>
+                    <span className="font-bold text-gray-800">
+                      {selectedAnimal.power + selectedAnimal.defense + selectedAnimal.speed + selectedAnimal.intelligence}
+                    </span>
+                  </div>
                 </div>
               ) : (
                 <button
@@ -406,7 +404,8 @@ export default function CreateCharacterPage() {
                         if (data.success) {
                           setBattleText(data.text);
                         } else {
-                          alert("생성에 실패했어요 ㅠㅠ");
+                          console.error("Server error:", data.error);
+                          alert(`생성에 실패했어요 ㅠㅠ\n이유: ${data.error}`);
                         }
                       } catch (e) {
                         console.error(e);
@@ -467,9 +466,9 @@ export default function CreateCharacterPage() {
             <div className="grid md:grid-cols-3 gap-4">
               {existingCharacters.map((char) => (
                 <div key={char.id} className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl p-4 text-center">
-                  <div className="text-3xl mb-2">{char.animal.emoji}</div>
-                  <p className="font-bold">{char.name}</p>
-                  <p className="text-sm text-gray-600">{char.animal.korean_name}</p>
+                  <div className="text-3xl mb-2">{char.animal?.emoji}</div>
+                  <p className="font-bold">{char.characterName}</p>
+                  <p className="text-sm text-gray-600">{char.animal?.korean_name}</p>
                 </div>
               ))}
             </div>

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { collection, query, where, getDocs, orderBy, limit, doc, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { User, Character } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -29,6 +31,7 @@ interface LeaderboardEntry {
   battleText?: string;
   animal?: any;
 }
+import { generateBots } from '../../utils/botGenerator';
 
 interface BattleMode {
   isActive: boolean;
@@ -42,6 +45,7 @@ export default function LeaderboardPage() {
   const searchParams = useSearchParams();
   const attackerId = searchParams.get('attackerId');
   const [attackerCharacter, setAttackerCharacter] = useState<Character | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,59 +80,113 @@ export default function LeaderboardPage() {
   useEffect(() => {
     fetchLeaderboard();
     loadBattleLimit();
-  }, [category, sortBy]);
+  }, [category, sortBy, showBots]);
 
   useEffect(() => {
     if (user?.id) {
-      fetch(`/api/characters?userId=${user.id}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) setMyCharacters(data.data);
-        })
-        .catch(err => console.error(err));
+      const fetchMyCharacters = async () => {
+        try {
+          const q = query(
+            collection(db, 'characters'),
+            where('userId', '==', user.id), // Use user.id (which is the uid)
+            where('isActive', '==', true)
+          );
+          const snapshot = await getDocs(q);
+          const chars = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character));
+          setMyCharacters(chars);
+        } catch (err) {
+          console.error("Failed to fetch my characters:", err);
+        }
+      };
+      fetchMyCharacters();
     }
   }, [user]);
 
   const fetchLeaderboard = async () => {
     try {
       setIsLoading(true);
-      const params = new URLSearchParams();
-      if (category !== 'all') params.append('category', category);
-      params.append('sortBy', sortBy);
+      setError(null);
 
-      console.log('📋 Fetching leaderboard...', `/api/leaderboard?${params}`);
-      const response = await fetch(`/api/leaderboard?${params}`);
-      console.log('🔄 Response status:', response.status);
+      // determine sort field
+      let sortField = 'baseScore';
+      let sortDirection: 'asc' | 'desc' = 'desc';
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (sortBy === 'elo') sortField = 'eloScore';
+      else if (sortBy === 'wins') sortField = 'wins';
+      else if (sortBy === 'totalBattles') sortField = 'totalActiveBattles';
 
-      const data = await response.json();
-      console.log('📦 Leaderboard data:', data);
+      const charactersRef = collection(db, 'characters');
+      // Fix: Query simple filtering only. Sort and limit locally to avoid Index errors.
+      // Fetching all active characters might be heavy eventually, but fine for < 1000 users.
+      // If it grows, we MUST create composite indexes.
+      const q = query(charactersRef, where('isActive', '==', true));
 
-      if (data.success) {
-        setEntries(data.data.leaderboard || []);
-        console.log('✅ Entries set:', data.data.leaderboard?.length || 0);
-      } else {
-        console.error('❌ API error:', data.error);
-        alert('리더보드 데이터를 불러올 수 없습니다: ' + (data.error || '알 수 없는 오류'));
-      }
+      const querySnapshot = await getDocs(q);
+      const fetchedEntries: LeaderboardEntry[] = [];
+      let rankCounter = 1;
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data() as Character;
+
+        // Client-side filtering
+        if (showBots && !data.isBot) return;
+        if (!showBots && data.isBot) return;
+
+        if (category !== 'all' && data.animal?.category !== category) return;
+
+        fetchedEntries.push({
+          rank: rankCounter++,
+          id: doc.id,
+          userId: data.userId,
+          characterName: data.characterName,
+          animalName: data.animal?.name || '?',
+          animalIcon: data.animal?.emoji || '🐾',
+          animalCategory: data.animal?.category || 'unknown',
+          playerName: data.user?.displayName || 'Unknown',
+          isGuest: data.user?.isGuest || false,
+          isBot: data.isBot,
+          baseScore: data.baseScore,
+          eloScore: data.eloScore,
+          wins: data.wins,
+          losses: data.losses,
+          totalBattles: data.totalActiveBattles + (data.totalPassiveBattles || 0),
+          winRate: (data.wins + data.losses) > 0 ? Math.round((data.wins / (data.wins + data.losses)) * 100) : 0,
+          createdAt: data.createdAt?.toString() || '',
+          battleText: data.battleText,
+          animal: data.animal
+        });
+      });
+
+      // Sort in memory
+      fetchedEntries.sort((a, b) => {
+        if (sortBy === 'elo') return b.eloScore - a.eloScore;
+        if (sortBy === 'wins') return b.wins - a.wins;
+        // if (sortBy === 'totalBattles') return b.totalBattles - a.totalBattles;
+        return b.baseScore - a.baseScore;
+      });
+
+      // Limit locally if needed (e.g. top 100)
+      const limitedEntries = fetchedEntries.slice(0, 100);
+
+      // Re-rank after filter
+      limitedEntries.forEach((e, i) => e.rank = i + 1);
+
+      setEntries(limitedEntries);
     } catch (error) {
-      console.error('🔥 Leaderboard fetch error:', error);
-      alert('리더보드를 불러오는 중 오류가 발생했습니다.');
+      console.error('Leaderboard fetch error:', error);
+      setError('리더보드 데이터를 불러올 수 없습니다. (Firestore Error)');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 상대 캐릭터의 상세 정보 가져오기
+  // 상대 캐릭터의 상세 정보 가져오기 (Direct Firestore)
   const fetchCharacterDetails = async (characterId: string) => {
     try {
-      const response = await fetch(`/api/characters/${characterId}`);
-      const data = await response.json();
-      if (data.success) {
-        return data.data;
+      const docRef = doc(db, 'characters', characterId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        return { id: docSnap.id, ...docSnap.data() } as Character;
       }
       return null;
     } catch (error) {
@@ -225,52 +283,133 @@ export default function LeaderboardPage() {
     setBattleMode(prev => ({ ...prev, isBattling: true }));
 
     try {
-      const token = await firebaseUser?.getIdToken();
-      const response = await fetch('/api/battles', {
+      const attacker = battleMode.myCharacter;
+      const defender = battleMode.opponent;
+
+      if (!attacker || !defender) return;
+
+      // 1. Calculate Battle Result locally (skipping complex Gemini judgment for now to fix error)
+      // 1. Call AI Judgment API
+      const response = await fetch('/api/ai/judge-battle', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          attackerId: battleMode.myCharacter.id,
-          defenderId: battleMode.opponent.id
+          attacker: {
+            characterName: attacker.characterName,
+            animalName: attacker.animal?.korean_name,
+            battleText: attacker.battleText
+          },
+          defender: {
+            characterName: defender.characterName,
+            animalName: defender.animal?.korean_name,
+            battleText: defender.battleText
+          }
         })
       });
 
       const data = await response.json();
+      let battleResult;
+      let winner;
 
       if (data.success) {
-        setBattleMode(prev => ({
-          ...prev,
-          result: data.data,
-          isBattling: false
-        }));
-
-        // 캐릭터 정보 업데이트
-        const updatedCharacters = myCharacters.map(char => {
-          if (char.id === battleMode.myCharacter!.id) {
-            return {
-              ...char,
-              activeBattlesToday: char.activeBattlesToday + 1,
-              wins: char.wins + (data.data.result.winner === 'attacker' ? 1 : 0),
-              losses: char.losses + (data.data.result.winner === 'defender' ? 1 : 0),
-              baseScore: data.data.updatedStats.attacker.baseScore,
-              eloScore: data.data.updatedStats.attacker.eloScore
-            };
-          }
-          return char;
-        });
-        setMyCharacters(updatedCharacters);
-
-        // 리더보드 새로고침
-        setTimeout(() => {
-          fetchLeaderboard();
-        }, 2000);
+        battleResult = data.result;
+        winner = battleResult.winner;
       } else {
-        alert(data.error || '배틀 중 오류가 발생했어요');
-        setBattleMode(prev => ({ ...prev, isBattling: false }));
+        // Fallback logic if API fails
+        console.error("AI API Failed, using fallback:", data.error);
+        const expectedScore = 1 / (1 + Math.pow(10, (defender.eloScore - attacker.eloScore) / 400));
+        const actualScore = Math.random() < expectedScore ? 1 : 0;
+        winner = actualScore === 1 ? 'attacker' : 'defender';
+        battleResult = {
+          winner,
+          judgment: "AI 심판이 잠시 자리를 비웠네요! 운으로 승부합니다!",
+          reasoning: winner === 'attacker' ? "운이 좋았습니다!" : "상대방의 운이 더 좋았네요."
+        };
       }
+
+      const isWin = winner === 'attacker';
+
+      const attackerScoreChange = isWin ? 10 : -5;
+      const defenderScoreChange = isWin ? -5 : 10;
+
+      const expectedScoreStats = 1 / (1 + Math.pow(10, (defender.eloScore - attacker.eloScore) / 400));
+      const actualScoreStats = isWin ? 1 : 0;
+
+      const K = 32;
+      const attackerEloChange = Math.round(K * (actualScoreStats - expectedScoreStats));
+      const defenderEloChange = Math.round(K * ((1 - actualScoreStats) - (1 - expectedScoreStats)));
+
+      // 2. Direct Firestore Update
+      const attackerRef = doc(db, 'characters', attacker.id);
+      const defenderRef = doc(db, 'characters', defender.id);
+
+      // We need to fetch current stats to be safe or just increment
+      const attackerUpdate: any = {
+        activeBattlesToday: increment(1),
+        totalActiveBattles: increment(1),
+        baseScore: increment(attackerScoreChange),
+        eloScore: increment(attackerEloChange),
+        wins: increment(isWin ? 1 : 0),
+        losses: increment(isWin ? 0 : 1)
+      };
+
+      const defenderUpdate: any = {
+        totalPassiveBattles: increment(1),
+        baseScore: increment(defenderScoreChange),
+        eloScore: increment(defenderEloChange),
+        wins: increment(isWin ? 0 : 1),
+        losses: increment(isWin ? 1 : 0)
+      };
+
+      await updateDoc(attackerRef, attackerUpdate);
+      await updateDoc(defenderRef, defenderUpdate);
+
+      const finalBattleResultData = {
+        result: {
+          winner: winner,
+          winnerId: isWin ? attacker.id : defender.id,
+          judgment: "AI 판정: " + battleResult.judgment,
+          reasoning: battleResult.reasoning
+        },
+        updatedStats: {
+          attacker: {
+            baseScore: attacker.baseScore + attackerScoreChange,
+            eloScore: attacker.eloScore + attackerEloChange
+          },
+          defender: {
+            baseScore: defender.baseScore + defenderScoreChange,
+            eloScore: defender.eloScore + defenderEloChange
+          }
+        }
+      };
+
+      setBattleMode(prev => ({
+        ...prev,
+        result: finalBattleResultData,
+        isBattling: false
+      }));
+
+      // 캐릭터 정보 업데이트 (Local State)
+      const updatedCharacters = myCharacters.map(char => {
+        if (char.id === battleMode.myCharacter!.id) {
+          return {
+            ...char,
+            activeBattlesToday: char.activeBattlesToday + 1,
+            wins: char.wins + (isWin ? 1 : 0),
+            losses: char.losses + (isWin ? 0 : 1),
+            baseScore: attacker.baseScore + attackerScoreChange,
+            eloScore: attacker.eloScore + attackerEloChange
+          };
+        }
+        return char;
+      });
+      setMyCharacters(updatedCharacters);
+
+      // 리더보드 새로고침
+      setTimeout(() => {
+        fetchLeaderboard();
+      }, 1000);
+
     } catch (error) {
       console.error('Battle error:', error);
       alert('배틀 실행 중 오류가 발생했어요');
@@ -311,6 +450,15 @@ export default function LeaderboardPage() {
     return myCharacters.some(char => char.id === characterId);
   };
 
+  const handleSeedBots = async () => {
+    if (window.confirm('정말 20명의 AI 봇을 생성하시겠습니까? (이미 있으면 중복 생성되지 않습니다)')) {
+      setIsLoading(true);
+      await generateBots();
+      await fetchLeaderboard();
+      setIsLoading(false);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100">
       {/* 헤더 - Adjusted */}
@@ -324,7 +472,7 @@ export default function LeaderboardPage() {
       {/* Battle Mode Banner */}
       {attackerCharacter && (
         <div className="max-w-7xl mx-auto px-6 mb-6">
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white p-4 rounded-2xl shadow-lg flex items-center justify-between"
@@ -337,11 +485,11 @@ export default function LeaderboardPage() {
                 <p className="text-blue-100 text-sm font-bold uppercase tracking-wider">Currently Playing As</p>
                 <h2 className="text-2xl font-bold">{attackerCharacter.characterName}</h2>
                 <p className="text-blue-100 text-sm">
-                  {attackerCharacter.animal?.koreanName} | ELO: {attackerCharacter.eloScore} | {attackerCharacter.wins}승 {attackerCharacter.losses}패
+                  {attackerCharacter.animal?.korean_name} | ELO: {attackerCharacter.eloScore} | {attackerCharacter.wins}승 {attackerCharacter.losses}패
                 </p>
               </div>
             </div>
-            <button 
+            <button
               onClick={() => window.location.href = '/play'}
               className="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg text-sm font-bold transition-colors"
             >
@@ -456,6 +604,19 @@ export default function LeaderboardPage() {
           </div>
         )}
 
+        {/* 에러 메시지 */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded shadow-md"
+            role="alert"
+          >
+            <p className="font-bold">오류 발생</p>
+            <p>{error}</p>
+          </motion.div>
+        )}
+
         {/* 리더보드 테이블 */}
         {isLoading ? (
           <div className="text-center py-12">
@@ -544,11 +705,10 @@ export default function LeaderboardPage() {
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
                                 onClick={() => startBattle(entry)}
-                                className={`${
-                                  attackerId && attackerCharacter 
-                                    ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600' 
-                                    : 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600'
-                                } text-white font-bold py-2 px-4 rounded-lg text-sm transition-all duration-200 shadow-lg hover:shadow-xl`}
+                                className={`${attackerId && attackerCharacter
+                                  ? 'bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600'
+                                  : 'bg-gradient-to-r from-red-500 to-orange-500 hover:from-red-600 hover:to-orange-600'
+                                  } text-white font-bold py-2 px-4 rounded-lg text-sm transition-all duration-200 shadow-lg hover:shadow-xl`}
                               >
                                 {attackerId && attackerCharacter ? '⚔️ 바로 배틀!' : '⚔️ 도전!'}
                               </motion.button>
@@ -586,6 +746,15 @@ export default function LeaderboardPage() {
           >
             🎮 게임으로 돌아가기
           </button>
+
+          {user?.email && ['drjang000@gmail.com', 'drjang00@gmail.com', '102030hohoho@gmail.com'].includes(user.email) && (
+            <button
+              onClick={handleSeedBots}
+              className="bg-gray-800 text-white px-4 py-2 rounded-lg text-xs hover:bg-gray-700"
+            >
+              🤖 관리자: 봇 생성
+            </button>
+          )}
           {!user && (
             <button
               onClick={() => window.location.href = '/'}
@@ -642,7 +811,7 @@ export default function LeaderboardPage() {
                       <div className="text-left">
                         <p className="font-bold">{character.characterName}</p>
                         <p className="text-sm text-gray-600">
-                          {character.animal?.koreanName} | ELO: {character.eloScore}
+                          {character.animal?.korean_name} | ELO: {character.eloScore}
                         </p>
                       </div>
                     </div>

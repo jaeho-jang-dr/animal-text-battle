@@ -14,7 +14,13 @@ const nunito = Nunito({
 export const metadata: Metadata = {
   title: "동물 텍스트 배틀 🦁",
   description: "나만의 동물 캐릭터로 펼치는 즐거운 상상력 대결!",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0",
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   themeColor: "#4ade80",
 };
 

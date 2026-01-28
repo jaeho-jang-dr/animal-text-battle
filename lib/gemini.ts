@@ -1,14 +1,22 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Initialize Gemini API
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const apiKey = process.env.GEMINI_API_KEY;
+if (!apiKey) {
+    console.error("GEMINI_API_KEY is missing in environment variables!");
+} else {
+    console.log("Gemini API Key loaded (starts with " + apiKey.substring(0, 4) + ")");
+}
+
+const genAI = new GoogleGenerativeAI(apiKey || '');
 
 // Model for text generation (Flash is faster and cheaper, Pro is smarter)
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Based on available models: gemini-2.0-flash is available.
+const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 export async function generateBattleText(animalName: string, characterName: string): Promise<string> {
-    if (!process.env.GEMINI_API_KEY) {
-        throw new Error("GEMINI_API_KEY is not set");
+    if (!apiKey) {
+        throw new Error("API Key가 설정되지 않았습니다. (.env.local 확인 필요)");
     }
 
     const prompt = `
@@ -18,14 +26,15 @@ export async function generateBattleText(animalName: string, characterName: stri
     캐릭터 이름: ${characterName}
     
     조건:
-    1. 10~100자 사이의 짧고 강렬한 문장.
-    2. 자신감 넘치고, 자기 동물의 특징을 살린 내용.
-    3. 아이들이 보기에 적절한 내용 (비속어 금지).
-    4. "~다", "~까" 등의 당당한 어미 사용.
+    1. **절대 100자를 넘기지 마세요.** (가급적 50자 내외로 짧게!)
+    2. 딱 1~2문장으로 임팩트 있게 작성하세요.
+    3. 자신감 넘치고, 자기 동물의 특징을 살린 내용.
+    4. 아이들이 보기에 적절한 내용 (비속어 금지).
+    5. "~다", "~까" 등의 당당한 어미 사용.
     
     예시:
-    "나는 초원의 지배자 사자왕이다! 나의 우렁찬 포효 소리를 들어보아라!"
-    "날렵한 치타처럼 빠르게 너를 제압해주지. 준비는 되었나?"
+    "나는 초원의 지배자 사자왕이다! 나의 우렁찬 포효를 들어라!"
+    "날렵한 치타처럼 너를 제압해주지. 준비는 되었나?"
     
     출력:
   `;
@@ -33,9 +42,23 @@ export async function generateBattleText(animalName: string, characterName: stri
     try {
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        const text = response.text().trim();
+        let text = response.text().trim();
+
         // Remove quotes if present
-        return text.replace(/^["']|["']$/g, '');
+        text = text.replace(/^["']|["']$/g, '');
+
+        // Force truncate if too long (safety net)
+        if (text.length > 95) {
+            // Cut at the last punctuation mark before 95 chars to keep it natural
+            const cutIndex = text.lastIndexOf('.', 95);
+            if (cutIndex > 0) {
+                text = text.substring(0, cutIndex + 1);
+            } else {
+                // Fallback: just hard cut
+                text = text.substring(0, 95) + "...";
+            }
+        }
+        return text;
     } catch (error) {
         console.error("Gemini Generation Error:", error);
         throw new Error("AI 생성에 실패했습니다.");

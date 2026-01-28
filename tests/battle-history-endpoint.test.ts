@@ -1,11 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 import { GET } from '../app/api/battles/history/route';
 import { db } from '../lib/db';
 import { battleHistoryCache } from '../lib/cache/battle-history-cache';
 
 // Mock the database
-jest.mock('@/lib/db');
+vi.mock('../lib/db', () => ({
+  db: {
+    prepare: vi.fn()
+  }
+}));
 
 describe('Battle History Endpoint', () => {
   const mockToken = 'valid-test-token-123';
@@ -55,11 +59,11 @@ describe('Battle History Endpoint', () => {
     battleHistoryCache.clear();
     
     // Reset mocks
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    vi.restoreAllMocks();
   });
 
   describe('Authentication', () => {
@@ -75,8 +79,8 @@ describe('Battle History Endpoint', () => {
     });
 
     it('should return 401 when token is invalid', async () => {
-      (db.prepare as jest.Mock).mockReturnValue({
-        get: jest.fn().mockReturnValue(null)
+      (db.prepare as any).mockReturnValue({
+        get: vi.fn().mockReturnValue(null)
       });
 
       const request = new NextRequest('http://localhost:3008/api/battles/history?characterId=123', {
@@ -96,8 +100,8 @@ describe('Battle History Endpoint', () => {
 
   describe('Character Validation', () => {
     it('should return 400 when characterId is missing', async () => {
-      (db.prepare as jest.Mock).mockReturnValue({
-        get: jest.fn().mockReturnValue(mockUser)
+      (db.prepare as any).mockReturnValue({
+        get: vi.fn().mockReturnValue(mockUser)
       });
 
       const request = new NextRequest('http://localhost:3008/api/battles/history', {
@@ -115,9 +119,9 @@ describe('Battle History Endpoint', () => {
     });
 
     it('should return 404 when character not found', async () => {
-      (db.prepare as jest.Mock)
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(mockUser) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(null) });
+      (db.prepare as any)
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(mockUser) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(null) });
 
       const request = new NextRequest('http://localhost:3008/api/battles/history?characterId=nonexistent', {
         headers: {
@@ -136,9 +140,9 @@ describe('Battle History Endpoint', () => {
     it('should return 403 when user does not own character', async () => {
       const otherCharacter = { ...mockCharacter, user_id: 'other-user' };
       
-      (db.prepare as jest.Mock)
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(mockUser) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(otherCharacter) });
+      (db.prepare as any)
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(mockUser) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(otherCharacter) });
 
       const request = new NextRequest(`http://localhost:3008/api/battles/history?characterId=${mockCharacterId}`, {
         headers: {
@@ -158,11 +162,11 @@ describe('Battle History Endpoint', () => {
   describe('Battle History Retrieval', () => {
     beforeEach(() => {
       // Mock successful auth and character lookup
-      (db.prepare as jest.Mock)
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(mockUser) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(mockCharacter) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue({ count: 50 }) })
-        .mockReturnValueOnce({ all: jest.fn().mockReturnValue(mockBattles) });
+      (db.prepare as any)
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(mockUser) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(mockCharacter) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue({ count: 50 }) })
+        .mockReturnValueOnce({ all: vi.fn().mockReturnValue(mockBattles) });
     });
 
     it('should return battle history successfully', async () => {
@@ -213,11 +217,11 @@ describe('Battle History Endpoint', () => {
   describe('Caching', () => {
     beforeEach(() => {
       // Mock successful auth and data
-      (db.prepare as jest.Mock)
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(mockUser) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(mockCharacter) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue({ count: 50 }) })
-        .mockReturnValueOnce({ all: jest.fn().mockReturnValue(mockBattles) });
+      (db.prepare as any)
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(mockUser) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(mockCharacter) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue({ count: 50 }) })
+        .mockReturnValueOnce({ all: vi.fn().mockReturnValue(mockBattles) });
     });
 
     it('should cache results on first request', async () => {
@@ -259,9 +263,9 @@ describe('Battle History Endpoint', () => {
       await GET(request1);
 
       // Reset mocks for second request
-      jest.clearAllMocks();
-      (db.prepare as jest.Mock)
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(mockUser) });
+      vi.clearAllMocks();
+      (db.prepare as any)
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(mockUser) });
 
       // Second request should hit cache
       const request2 = new NextRequest(
@@ -303,23 +307,23 @@ describe('Battle History Endpoint', () => {
   describe('Advanced Features', () => {
     beforeEach(() => {
       // Mock with stats calculation data
-      (db.prepare as jest.Mock)
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(mockUser) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(mockCharacter) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue({ count: 50 }) })
-        .mockReturnValueOnce({ all: jest.fn().mockReturnValue(mockBattles) })
+      (db.prepare as any)
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(mockUser) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(mockCharacter) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue({ count: 50 }) })
+        .mockReturnValueOnce({ all: vi.fn().mockReturnValue(mockBattles) })
         // Stats queries
         .mockReturnValueOnce({ 
-          get: jest.fn().mockReturnValue({ 
+          get: vi.fn().mockReturnValue({ 
             total_battles: 50, 
             wins: 35, 
             losses: 15 
           }) 
         })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue({ avg_change: 5.5 }) })
-        .mockReturnValueOnce({ all: jest.fn().mockReturnValue([]) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(null) })
-        .mockReturnValueOnce({ get: jest.fn().mockReturnValue(null) });
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue({ avg_change: 5.5 }) })
+        .mockReturnValueOnce({ all: vi.fn().mockReturnValue([]) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(null) })
+        .mockReturnValueOnce({ get: vi.fn().mockReturnValue(null) });
     });
 
     it('should include stats when requested', async () => {
@@ -382,7 +386,7 @@ describe('Battle History Endpoint', () => {
 
   describe('Error Handling', () => {
     it('should handle database errors gracefully', async () => {
-      (db.prepare as jest.Mock).mockImplementation(() => {
+      (db.prepare as any).mockImplementation(() => {
         throw new Error('Database connection failed');
       });
 

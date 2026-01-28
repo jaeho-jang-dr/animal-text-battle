@@ -10,9 +10,9 @@ export default function AdminButton() {
   const [isHovered, setIsHovered] = useState(false);
   const { user, isLoading } = useAuth();
 
-  // 관리자 이메일 목록 (임시 하드코딩, 나중에 Firestore의 user role로 대체 가능)
-  // user.id를 사용하거나 특정 이메일을 체크
-  const isAdmin = user && (user.email === 'admin@example.com' || user.is_guest === false);
+  // 관리자 이메일 목록
+  const adminEmails = ['drjang000@gmail.com', 'drjang00@gmail.com', '102030hohoho@gmail.com'];
+  const isAdmin = user && user.email && adminEmails.includes(user.email);
 
   const handleClick = () => {
     if (isAdmin) {
@@ -38,6 +38,10 @@ export default function AdminButton() {
   // 변경: 단순화를 위해 '관리자' 페이지로 이동하는 히든 버튼처럼 유지하되,
   // 로그인 상태를 useAuth로 체크.
 
+  if (!isAdmin) {
+    return null;
+  }
+
   return (
     <AnimatePresence>
       <motion.div
@@ -60,8 +64,8 @@ export default function AdminButton() {
           whileTap={{ scale: 0.95 }}
           onClick={handleClick}
           className={`relative w-10 h-10 rounded-full shadow-sm transition-all duration-300 ${isAdmin
-              ? 'bg-gradient-to-br from-purple-400/50 to-pink-400/50'
-              : 'bg-gradient-to-br from-gray-300/50 to-gray-400/50'
+            ? 'bg-gradient-to-br from-purple-400/50 to-pink-400/50'
+            : 'bg-gradient-to-br from-gray-300/50 to-gray-400/50'
             } hover:shadow-lg backdrop-blur-sm`}
         >
           <motion.span
