@@ -6,7 +6,6 @@
     "dev": "next dev -p 3008",
     "build": "next build",
     "start": "next start -p 3008",
-    "postinstall": "npm run build",
     "lint": "next lint",
     "test": "vitest",
     "test:run": "vitest run",

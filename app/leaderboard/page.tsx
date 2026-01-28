@@ -41,8 +41,11 @@ interface BattleMode {
   isBattling: boolean;
 }
 
-export default function LeaderboardPage() {
+import { Suspense } from 'react';
+
+function LeaderboardContent() {
   const searchParams = useSearchParams();
+
   const attackerId = searchParams.get('attackerId');
   const [attackerCharacter, setAttackerCharacter] = useState<Character | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -906,5 +909,12 @@ export default function LeaderboardPage() {
         </div>
       )}
     </main>
+  );
+}
+export default function LeaderboardPage() {
+  return (
+    <Suspense fallback={<div className='min-h-screen flex items-center justify-center text-4xl'>Loading...</div>}>
+      <LeaderboardContent />
+    </Suspense>
   );
 }

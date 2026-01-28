@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { doc, setDoc, collection, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Character, Animal } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 
-export default function CreateCharacterPage() {
+function CreateCharacterContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const animalId = searchParams.get('animal');
@@ -476,5 +476,13 @@ export default function CreateCharacterPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function CreateCharacterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-purple-100 via-pink-100 to-blue-100 flex items-center justify-center text-2xl">⏳ 로딩 중...</div>}>
+      <CreateCharacterContent />
+    </Suspense>
   );
 }

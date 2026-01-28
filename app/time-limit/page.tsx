@@ -14,11 +14,11 @@ export default function TimeLimitPage() {
       const tomorrow = new Date(now);
       tomorrow.setDate(tomorrow.getDate() + 1);
       tomorrow.setHours(0, 0, 0, 0);
-      
+
       const diff = tomorrow.getTime() - now.getTime();
       const hours = Math.floor(diff / (1000 * 60 * 60));
       const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-      
+
       setTimeRemaining(`${hours}시간 ${minutes}분`);
     };
 
@@ -49,13 +49,13 @@ export default function TimeLimitPage() {
         <h1 className="text-4xl font-bold text-gray-800 mb-4">
           오늘의 게임 시간이 끝났어요!
         </h1>
-        
+
         <div className="card-animal p-6 mb-6">
           <p className="text-xl text-gray-700 mb-4">
-            하루에 정해진 시간만 게임을 하는 건<br/>
+            하루에 정해진 시간만 게임을 하는 건<br />
             건강한 습관이에요! 💪
           </p>
-          
+
           <div className="bg-yellow-100 rounded-lg p-4 mb-4">
             <p className="font-bold text-lg mb-2">다음 게임까지:</p>
             <p className="text-2xl text-kid-blue font-bold">{timeRemaining || '계산 중...'}</p>
@@ -121,29 +121,48 @@ export default function TimeLimitPage() {
       </motion.div>
 
       {/* 움직이는 별들 배경 */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        {[...Array(20)].map((_, i) => (
-          <motion.div
-            key={i}
-            className="absolute text-2xl"
-            initial={{
-              x: Math.random() * window.innerWidth,
-              y: -50,
-            }}
-            animate={{
-              y: window.innerHeight + 50,
-            }}
-            transition={{
-              duration: Math.random() * 10 + 10,
-              repeat: Infinity,
-              delay: Math.random() * 10,
-              ease: "linear",
-            }}
-          >
-            ⭐
-          </motion.div>
-        ))}
-      </div>
+      <StarBackground />
     </main>
+  );
+}
+
+function StarBackground() {
+  const [stars, setStars] = useState<{ id: number; x: number; duration: number; delay: number }[]>([]);
+
+  useEffect(() => {
+    setStars(
+      Array.from({ length: 20 }).map((_, i) => ({
+        id: i,
+        x: Math.random() * window.innerWidth,
+        duration: Math.random() * 10 + 10,
+        delay: Math.random() * 10,
+      }))
+    );
+  }, []);
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {stars.map((star) => (
+        <motion.div
+          key={star.id}
+          className="absolute text-2xl"
+          initial={{
+            x: star.x,
+            y: -50,
+          }}
+          animate={{
+            y: typeof window !== 'undefined' ? window.innerHeight + 50 : 1000,
+          }}
+          transition={{
+            duration: star.duration,
+            repeat: Infinity,
+            delay: star.delay,
+            ease: "linear",
+          }}
+        >
+          ⭐
+        </motion.div>
+      ))}
+    </div>
   );
 }
