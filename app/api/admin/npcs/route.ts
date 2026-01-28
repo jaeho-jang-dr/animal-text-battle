@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase-admin';
+import { adminDb } from '../../../../lib/firebase-admin';
 
 export async function GET(request: NextRequest) {
     try {
@@ -14,7 +14,12 @@ export async function GET(request: NextRequest) {
             .where('isBot', '==', true)
             .get();
 
-        const npcs = snapshot.docs.map(doc => doc.data());
+        const npcs = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+
+        console.log(`[Admin NPCs API] Found ${npcs.length} NPCs`);
 
         return NextResponse.json({ success: true, data: npcs });
     } catch (error) {

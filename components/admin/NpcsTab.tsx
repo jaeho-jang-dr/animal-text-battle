@@ -1,7 +1,7 @@
 
+
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { generateBots } from '../../utils/botGenerator';
 
 interface NPC {
     id: string;
@@ -12,9 +12,6 @@ interface NPC {
     wins: number;
     losses: number;
 }
-
-import { collection, query, where, getDocs, doc, updateDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
 
 export default function NpcsTab() {
     const [npcs, setNpcs] = useState<NPC[]>([]);
@@ -29,21 +26,20 @@ export default function NpcsTab() {
     const fetchNpcs = async () => {
         try {
             setLoading(true);
-            const q = query(
-                collection(db, 'characters'),
-                where('isBot', '==', true)
-                // orderBy cannot be used with where unless index exists. Sort client side.
-            );
-            const snapshot = await getDocs(q);
-            const bots = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as NPC));
+            const response = await fetch('/api/admin/npcs');
+            const data = await response.json();
 
-            // Sort by Score desc
-            bots.sort((a, b) => b.baseScore - a.baseScore);
-
-            setNpcs(bots);
+            if (data.success) {
+                const bots = data.data as NPC[];
+                // Sort by Score desc
+                bots.sort((a, b) => b.baseScore - a.baseScore);
+                setNpcs(bots);
+            } else {
+                throw new Error(data.error || 'Failed to fetch NPCs');
+            }
         } catch (e) {
             console.error(e);
-            alert('NPC 불러오기 실패 (Firestore)');
+            alert('NPC 불러오기 실패');
         } finally {
             setLoading(false);
         }
@@ -51,10 +47,18 @@ export default function NpcsTab() {
 
     const toggleNpc = async (id: string, currentStatus: boolean) => {
         try {
-            await updateDoc(doc(db, 'characters', id), {
-                isActive: !currentStatus
+            const response = await fetch('/api/admin/npcs', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, isActive: !currentStatus })
             });
-            setNpcs(prev => prev.map(n => n.id === id ? { ...n, isActive: !currentStatus } : n));
+
+            const data = await response.json();
+            if (data.success) {
+                setNpcs(prev => prev.map(n => n.id === id ? { ...n, isActive: !currentStatus } : n));
+            } else {
+                throw new Error(data.error);
+            }
         } catch (e) {
             console.error(e);
             alert('상태 변경 실패');
@@ -64,8 +68,18 @@ export default function NpcsTab() {
     const deleteNpc = async (id: string) => {
         if (!confirm('정말 삭제하시겠습니까?')) return;
         try {
-            await deleteDoc(doc(db, 'characters', id));
-            setNpcs(prev => prev.filter(n => n.id !== id));
+            const response = await fetch('/api/admin/npcs', {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                setNpcs(prev => prev.filter(n => n.id !== id));
+            } else {
+                throw new Error(data.error);
+            }
         } catch (e) {
             console.error(e);
             alert('삭제 실패');
@@ -76,9 +90,19 @@ export default function NpcsTab() {
         if (!confirm(`NPC ${genCount}마리를 생성하시겠습니까?`)) return;
         try {
             setLoading(true);
-            await generateBots(genCount);
-            // Reload list instead of page
-            await fetchNpcs();
+            const response = await fetch('/api/admin/generate-npcs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ count: genCount })
+            });
+
+            const data = await response.json();
+            if (data.success) {
+                alert(`${data.count}개의 NPC가 생성되었습니다!`);
+                await fetchNpcs();
+            } else {
+                throw new Error(data.error);
+            }
         } catch (e) {
             console.error(e);
             alert('생성 실패');

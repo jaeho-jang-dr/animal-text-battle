@@ -23,7 +23,10 @@ service cloud.firestore {
     // Mostly handled via API (Admin SDK), but in case of client usage
     match /characters/{characterId} {
       allow read: if true; // Public can see characters (for battles)
-      allow write: if false; // Writes must go through API for validation
+      // Allow create if user is signed in and sets themselves as owner
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      // Allow update/delete if user owns the character (checks existing data)
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
     }
 
     // Battles collection

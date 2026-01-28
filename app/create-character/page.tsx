@@ -3,9 +3,8 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { doc, setDoc, collection, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { doc, collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { v4 as uuidv4 } from 'uuid';
 import { Character, Animal } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -46,20 +45,22 @@ function CreateCharacterContent() {
   }, [animalId]);
 
   const fetchUserCharacters = async () => {
-    if (!user) return;
+    if (!firebaseUser) return;
     try {
-      const q = query(
-        collection(db, 'characters'),
-        where('userId', '==', user.id),
-        where('isActive', '==', true)
-      );
-      const snapshot = await getDocs(q);
-      const chars = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character));
+      const token = await firebaseUser.getIdToken();
+      const res = await fetch('/api/characters', {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
 
-      setExistingCharacters(chars);
-      if (chars.length >= 3) {
-        alert('캐릭터는 최대 3개까지만 만들 수 있어요!');
-        router.push('/play');
+      if (data.success) {
+        setExistingCharacters(data.data);
+        if (data.data.length >= 3) {
+          alert('캐릭터는 최대 3개까지만 만들 수 있어요!');
+          router.push('/play');
+        }
       }
     } catch (error) {
       console.error('Failed to fetch characters:', error);
@@ -106,51 +107,32 @@ function CreateCharacterContent() {
     setError('');
 
     try {
-      if (!user) throw new Error("로그인이 필요합니다.");
+      if (!user || !firebaseUser) throw new Error("로그인이 필요합니다.");
 
-      const characterId = uuidv4();
-      const newCharacter = {
-        id: characterId,
-        userId: user.id,
-        animalId: selectedAnimal.id,
-        characterName,
-        battleText,
-        // Default stats
-        baseScore: 1000,
-        eloScore: 1000,
-        wins: 0,
-        losses: 0,
-        isActive: true,
-        activeBattlesToday: 0,
-        lastBattleReset: serverTimestamp(),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        // Embedded animal data
-        animal: {
-          id: selectedAnimal.id,
-          name: selectedAnimal.name,
-          korean_name: selectedAnimal.korean_name,
-          category: selectedAnimal.category,
-          sub_category: selectedAnimal.sub_category,
-          emoji: selectedAnimal.emoji,
-          description: selectedAnimal.description,
-          kid_description: selectedAnimal.kid_description,
-          habitat: selectedAnimal.habitat,
-          food: selectedAnimal.food,
-          speciality: selectedAnimal.speciality,
-          fun_fact: selectedAnimal.fun_fact,
-          power: selectedAnimal.power || 50,
-          defense: selectedAnimal.defense || 50,
-          speed: selectedAnimal.speed || 50,
-          intelligence: selectedAnimal.intelligence || 50,
-          battle_cry: selectedAnimal.battle_cry,
-          rarity: selectedAnimal.rarity,
-          unlock_level: selectedAnimal.unlock_level
-        }
-      };
+      // Get Auth Token
+      const idToken = await firebaseUser.getIdToken();
 
-      await setDoc(doc(db, 'characters', characterId), newCharacter);
-      console.log("Character created successfully");
+      // Call API instead of direct Firestore write
+      const response = await fetch('/api/characters', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: JSON.stringify({
+          animalId: selectedAnimal.id,
+          characterName,
+          battleText
+        })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || '캐릭터 생성 실패');
+      }
+
+      console.log("Character created successfully:", data.data);
 
       // Force refresh user data or redirect
       await router.push('/play');
@@ -330,15 +312,15 @@ function CreateCharacterContent() {
                   </div>
                 </div>
               ) : (
-                  <button
-                    type="button"
-                    onClick={() => setIsAnimalModalOpen(true)}
-                    className="w-full bg-white hover:bg-slate-50 p-12 rounded-[2.5rem] transition-all duration-200 border-2 border-dashed border-slate-200 hover:border-purple-400 group"
-                  >
-                    <div className="text-6xl mb-4 group-hover:scale-110 transition-transform duration-200">🦁</div>
-                    <p className="text-slate-800 font-black text-xl mb-1">눌러서 동물 선택하기</p>
-                    <p className="text-slate-400 font-medium text-sm">도감으로 이동하지 않고 바로 선택할 수 있어요!</p>
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAnimalModalOpen(true)}
+                  className="w-full bg-white hover:bg-slate-50 p-12 rounded-[2.5rem] transition-all duration-200 border-2 border-dashed border-slate-200 hover:border-purple-400 group"
+                >
+                  <div className="text-6xl mb-4 group-hover:scale-110 transition-transform duration-200">🦁</div>
+                  <p className="text-slate-800 font-black text-xl mb-1">눌러서 동물 선택하기</p>
+                  <p className="text-slate-400 font-medium text-sm">도감으로 이동하지 않고 바로 선택할 수 있어요!</p>
+                </button>
               )}
             </div>
 

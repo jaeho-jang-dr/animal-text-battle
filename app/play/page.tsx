@@ -3,8 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { collection, query, where, getDocs } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
 import { Character, Animal } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useBattleSound } from '../../hooks/useBattleSound';
@@ -37,19 +35,26 @@ export default function PlayPage() {
 
     const fetchCharacters = async () => {
       try {
-        const q = query(
-          collection(db, 'characters'),
-          where('userId', '==', user?.id),
-          where('isActive', '==', true)
-        );
+        if (!firebaseUser) return;
 
-        const querySnapshot = await getDocs(q);
-        const chars = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character));
-        setCharacters(chars);
-        setError(null);
+        const token = await firebaseUser.getIdToken();
+        const res = await fetch('/api/characters', {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          setCharacters(data.data);
+          setError(null);
+        } else {
+          throw new Error(data.error || 'Failed to fetch characters');
+        }
       } catch (err) {
         console.error("Load chars error:", err);
-        setError("데이터를 불러올 수 없습니다. (Firestore Error)");
+        setError("데이터를 불러올 수 없습니다. (API Error)");
       }
     };
 

@@ -2,8 +2,6 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { collection, query, where, getDocs, orderBy, limit, doc, getDoc, updateDoc, increment } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
 import { User, Character } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -31,7 +29,7 @@ interface LeaderboardEntry {
   battleText?: string;
   animal?: any;
 }
-import { generateBots } from '../../utils/botGenerator';
+
 
 interface BattleMode {
   isActive: boolean;
@@ -89,14 +87,17 @@ function LeaderboardContent() {
     if (user?.id) {
       const fetchMyCharacters = async () => {
         try {
-          const q = query(
-            collection(db, 'characters'),
-            where('userId', '==', user.id), // Use user.id (which is the uid)
-            where('isActive', '==', true)
-          );
-          const snapshot = await getDocs(q);
-          const chars = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Character));
-          setMyCharacters(chars);
+          if (!firebaseUser) return;
+          const token = await firebaseUser.getIdToken();
+          const response = await fetch('/api/characters', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+          const data = await response.json();
+          if (data.success) {
+            setMyCharacters(data.data);
+          }
         } catch (err) {
           console.error("Failed to fetch my characters:", err);
         }
@@ -110,29 +111,21 @@ function LeaderboardContent() {
       setIsLoading(true);
       setError(null);
 
-      // determine sort field
-      let sortField = 'baseScore';
-      let sortDirection: 'asc' | 'desc' = 'desc';
+      // API 호출로 변경
+      const response = await fetch('/api/leaderboard', { cache: 'no-store' });
+      const resData = await response.json();
 
-      if (sortBy === 'elo') sortField = 'eloScore';
-      else if (sortBy === 'wins') sortField = 'wins';
-      else if (sortBy === 'totalBattles') sortField = 'totalActiveBattles';
+      if (!resData.success) {
+        throw new Error(resData.error || 'Failed to fetch leaderboard');
+      }
 
-      const charactersRef = collection(db, 'characters');
-      // Fix: Query simple filtering only. Sort and limit locally to avoid Index errors.
-      // Fetching all active characters might be heavy eventually, but fine for < 1000 users.
-      // If it grows, we MUST create composite indexes.
-      const q = query(charactersRef, where('isActive', '==', true));
+      const characters = resData.data as Character[];
 
-      const querySnapshot = await getDocs(q);
-      
-
+      // Client-side processing
       const fetchedEntries: LeaderboardEntry[] = [];
       let rankCounter = 1;
 
-      querySnapshot.forEach((doc) => {
-        const data = doc.data() as Character;
-
+      characters.forEach((data) => {
         // Client-side filtering
         if (showBots && !data.isBot) return;
         if (!showBots && data.isBot) return;
@@ -143,20 +136,19 @@ function LeaderboardContent() {
         if (data.isBot) {
           resolvedPlayerName = 'NPC';
         } else {
-          // Revert to simple ID display as requested (removing friendly name resolution)
           resolvedPlayerName = (data as any).user?.displayName || data.userId || 'Unknown';
         }
 
         fetchedEntries.push({
-          rank: rankCounter++,
-          id: doc.id,
+          rank: 0, // Will be set after sort
+          id: data.id,
           userId: data.userId,
           characterName: data.characterName,
           animalName: data.animal?.name || '?',
           animalIcon: data.animal?.emoji || '🐾',
           animalCategory: data.animal?.category || 'unknown',
           playerName: resolvedPlayerName,
-          isGuest: data.user?.isGuest || false,
+          isGuest: (data as any).user?.isGuest || false,
           isBot: data.isBot,
           baseScore: data.baseScore,
           eloScore: data.eloScore,
@@ -187,19 +179,19 @@ function LeaderboardContent() {
       setEntries(limitedEntries);
     } catch (error) {
       console.error('Leaderboard fetch error:', error);
-      setError('리더보드 데이터를 불러올 수 없습니다. (Firestore Error)');
+      setError('리더보드 데이터를 불러올 수 없습니다. (API Error)');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 상대 캐릭터의 상세 정보 가져오기 (Direct Firestore)
+  // 상대 캐릭터의 상세 정보 가져오기 (via API)
   const fetchCharacterDetails = async (characterId: string) => {
     try {
-      const docRef = doc(db, 'characters', characterId);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        return { id: docSnap.id, ...docSnap.data() } as Character;
+      const response = await fetch(`/api/characters/${characterId}`);
+      const data = await response.json();
+      if (data.success) {
+        return data.data as Character;
       }
       return null;
     } catch (error) {
@@ -352,30 +344,31 @@ function LeaderboardContent() {
       const attackerEloChange = Math.round(K * (actualScoreStats - expectedScoreStats));
       const defenderEloChange = Math.round(K * ((1 - actualScoreStats) - (1 - expectedScoreStats)));
 
-      // 2. Direct Firestore Update
-      const attackerRef = doc(db, 'characters', attacker.id);
-      const defenderRef = doc(db, 'characters', defender.id);
+      // 2. Call Battle Execution API
+      if (!firebaseUser) throw new Error("Not logged in");
+      const token = await firebaseUser.getIdToken();
 
-      // We need to fetch current stats to be safe or just increment
-      const attackerUpdate: any = {
-        activeBattlesToday: increment(1),
-        totalActiveBattles: increment(1),
-        baseScore: increment(attackerScoreChange),
-        eloScore: increment(attackerEloChange),
-        wins: increment(isWin ? 1 : 0),
-        losses: increment(isWin ? 0 : 1)
-      };
+      const execResponse = await fetch('/api/battles/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          attackerId: attacker.id,
+          defenderId: defender.id,
+          winnerId: isWin ? attacker.id : defender.id,
+          attackerScoreChange,
+          defenderScoreChange,
+          attackerEloChange,
+          defenderEloChange
+        })
+      });
 
-      const defenderUpdate: any = {
-        totalPassiveBattles: increment(1),
-        baseScore: increment(defenderScoreChange),
-        eloScore: increment(defenderEloChange),
-        wins: increment(isWin ? 0 : 1),
-        losses: increment(isWin ? 1 : 0)
-      };
-
-      await updateDoc(attackerRef, attackerUpdate);
-      await updateDoc(defenderRef, defenderUpdate);
+      const execData = await execResponse.json();
+      if (!execData.success) {
+        throw new Error(execData.error || 'Battle execution failed on server');
+      }
 
       const finalBattleResultData = {
         result: {
@@ -468,10 +461,23 @@ function LeaderboardContent() {
 
   const handleSeedBots = async () => {
     if (window.confirm('정말 20명의 AI 봇을 생성하시겠습니까? (이미 있으면 중복 생성되지 않습니다)')) {
-      setIsLoading(true);
-      await generateBots();
-      await fetchLeaderboard();
-      setIsLoading(false);
+      try {
+        setIsLoading(true);
+        const response = await fetch('/api/admin/generate-npcs', { method: 'POST' });
+        const data = await response.json();
+
+        if (data.success) {
+          alert(`봇 생성 완료: ${data.count}명 추가됨`);
+          await fetchLeaderboard();
+        } else {
+          alert('봇 생성 실패: ' + data.error);
+        }
+      } catch (error) {
+        console.error('Bot generation error:', error);
+        alert('봇 생성 중 오류가 발생했습니다.');
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -564,7 +570,7 @@ function LeaderboardContent() {
         {/* 메인 탭 (랭킹 vs 훈련소) */}
         <div className="flex justify-center mb-10 gap-4">
           <button
-            onClick={() => setCategory('all')} 
+            onClick={() => setCategory('all')}
             className={`px-8 py-4 rounded-2xl font-bold text-xl transition-all shadow-xl flex items-center gap-3 ${!showBots
               ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white scale-105 ring-4 ring-yellow-100'
               : 'bg-white text-slate-400 hover:bg-slate-50 hover:text-slate-600'
@@ -704,8 +710,8 @@ function LeaderboardContent() {
                             {entry.winRate}%
                           </div>
                           <div className="w-16 h-2 bg-slate-100 rounded-full mx-auto mt-1 overflow-hidden">
-                            <div 
-                              className="h-full bg-gradient-to-r from-green-400 to-emerald-500" 
+                            <div
+                              className="h-full bg-gradient-to-r from-green-400 to-emerald-500"
                               style={{ width: `${entry.winRate}%` }}
                             />
                           </div>
