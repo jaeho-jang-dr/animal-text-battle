@@ -131,6 +131,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithGoogle = async () => {
     const provider = new GoogleAuthProvider();
+    // 항상 계정 선택 화면 표시
+    provider.setCustomParameters({
+      prompt: 'select_account'
+    });
     await signInWithPopup(auth, provider);
   };
 
