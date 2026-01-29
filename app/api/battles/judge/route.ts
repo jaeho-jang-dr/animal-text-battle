@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '../../../../lib/db';
-import { judgeBattleWithAI } from '../../../../lib/gemini';
+import { judgeBattle } from '../../../../lib/battle-rules';
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,12 +23,12 @@ export async function POST(request: NextRequest) {
 
     // 시스템 토큰 확인
     const systemToken = process.env.SYSTEM_API_TOKEN || 'system-token';
-    
+
     // 시스템 토큰이 아닌 경우 일반 사용자 토큰으로 처리
     if (token !== systemToken) {
       // SQLite에서 사용자 확인
       const user = await db.prepare(`
-        SELECT * FROM users 
+        SELECT * FROM users
         WHERE login_token = ? AND token_expires_at > datetime('now')
       `).get(token);
 
@@ -65,28 +65,15 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
 
-    // AI 판정 수행 (Gemini 2.0 Flash)
-    let aiResult;
-    try {
-        console.log('🤖 AI 판정 시작 (Gemini 2.0 Flash)...');
-        aiResult = await judgeBattleWithAI(
-            attackerCharacter.character_name || attackerCharacter.name || '알 수 없음',
-            attackerCharacter.animal?.korean_name || attackerCharacter.animal?.name || '동물',
-            attackerText,
-            defenderCharacter.character_name || defenderCharacter.name || '알 수 없음',
-            defenderCharacter.animal?.korean_name || defenderCharacter.animal?.name || '동물',
-            defenderText
-        );
-        console.log('✅ AI 판정 완료:', aiResult);
-    } catch (aiError) {
-        console.error('❌ AI 판정 실패 (Fallback to Mock):', aiError);
-        // Fallback logic if AI fails completely
-        aiResult = {
-            winner: attackerText.length > defenderText.length ? 'attacker' : 'defender',
-            judgment: "AI 심판이 잠시 자리를 비웠네요! 더 정성스러운 대사를 쓴 쪽이 이깁니다!",
-            reasoning: "AI 연결 상태가 불안정하여 텍스트 길이로 판정했습니다."
-        };
-    }
+    // 규칙 기반 판정 수행
+    console.log('📊 규칙 기반 판정 시작...');
+    const battleResult = judgeBattle(
+      attackerText,
+      attackerCharacter.animal?.korean_name || attackerCharacter.animal?.name || '동물',
+      defenderText,
+      defenderCharacter.animal?.korean_name || defenderCharacter.animal?.name || '동물'
+    );
+    console.log('✅ 판정 완료:', battleResult);
 
     // 승자 ID 결정 (ID 식별자 유연성 확보)
     const attackerId = attackerCharacter.id || attackerCharacter._id || attackerCharacter.characterId;
@@ -97,7 +84,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: '캐릭터 ID 식별 실패' }, { status: 500 });
     }
 
-    const winnerId = aiResult.winner === 'attacker' ? attackerId : defenderId;
+    const winnerId = battleResult.winner === 'attacker' ? attackerId : defenderId;
     const isAttackerWinner = winnerId === attackerId;
 
     // 점수 변화 계산
@@ -109,10 +96,10 @@ export async function POST(request: NextRequest) {
     const K = 32; // ELO K-factor
     const attackerElo = attackerCharacter.elo_score || 1500;
     const defenderElo = defenderCharacter.elo_score || 1500;
-    
+
     const expectedAttacker = 1 / (1 + Math.pow(10, (defenderElo - attackerElo) / 400));
     const actualAttacker = isAttackerWinner ? 1 : 0;
-    
+
     const attackerEloChange = Math.round(K * (actualAttacker - expectedAttacker));
     const defenderEloChange = -attackerEloChange;
 
@@ -120,8 +107,8 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         winnerId,
-        judgment: aiResult.judgment,
-        reasoning: aiResult.reasoning,
+        judgment: battleResult.judgment,
+        reasoning: battleResult.reasoning,
         scoreChanges: {
           attackerScoreChange,
           defenderScoreChange,
@@ -129,21 +116,26 @@ export async function POST(request: NextRequest) {
           defenderEloChange
         },
         details: {
-          attackerScore: isAttackerWinner ? 100 : 80, // Mock scores for compatibility
-          defenderScore: isAttackerWinner ? 80 : 100,
-          aiResult // Debug info
+          attackerScore: battleResult.attackerScore.total,
+          defenderScore: battleResult.defenderScore.total,
+          attackerBreakdown: battleResult.attackerScore,
+          defenderBreakdown: battleResult.defenderScore
         }
       }
     });
 
   } catch (error) {
-    console.error('AI 판정 오류:', error);
+    console.error('판정 오류:', error);
     return NextResponse.json({
       success: false,
-      error: 'AI 판정 중 오류가 발생했습니다'
+      error: '판정 중 오류가 발생했습니다'
     }, { status: 500 });
   }
 }
 
-// Remove old unused functions
-function moderateContent(text: string) { return { isAppropriate: true }; }
+// 부적절 내용 검사 함수
+function moderateContent(text: string) {
+  const badWords = ['바보', '멍청', '죽', '살', '씨발', '개새끼', '병신'];
+  const found = badWords.some(word => text.includes(word));
+  return { isAppropriate: !found };
+}

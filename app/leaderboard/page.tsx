@@ -322,13 +322,13 @@ function LeaderboardContent() {
         winner = battleResult.winner;
       } else {
         // Fallback logic if API fails
-        console.error("AI API Failed, using fallback:", data.error);
+        console.error("Judge API Failed, using fallback:", data.error);
         const expectedScore = 1 / (1 + Math.pow(10, (defender.eloScore - attacker.eloScore) / 400));
         const actualScore = Math.random() < expectedScore ? 1 : 0;
         winner = actualScore === 1 ? 'attacker' : 'defender';
         battleResult = {
           winner,
-          judgment: "AI 심판이 잠시 자리를 비웠네요! 운으로 승부합니다!",
+          judgment: "심판이 잠시 자리를 비웠네요! 운으로 승부합니다!",
           reasoning: winner === 'attacker' ? "운이 좋았습니다!" : "상대방의 운이 더 좋았네요."
         };
       }

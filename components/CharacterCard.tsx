@@ -141,47 +141,9 @@ export default function CharacterCard({
                             />
 
                             <div className="flex justify-between items-center mt-2">
-                                <button
-                                    onClick={async (e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        if (!character.animal?.name || !character.characterName) {
-                                            alert('동물 정보나 이름이 없어 생성할 수 없습니다.');
-                                            return;
-                                        }
-
-                                        const btn = e.currentTarget;
-                                        const originalText = btn.innerText;
-                                        btn.innerText = "✨ 생성 중...";
-                                        btn.disabled = true;
-
-                                        try {
-                                            const res = await fetch('/api/ai/generate-text', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({
-                                                    animalName: character.animal.name,
-                                                    characterName: character.characterName
-                                                })
-                                            });
-                                            const data = await res.json();
-                                            if (data.success) {
-                                                setEditText(data.text);
-                                            } else {
-                                                alert('생성 실패: ' + data.error);
-                                            }
-                                        } catch (err) {
-                                            console.error(err);
-                                            alert('오류가 발생했습니다.');
-                                        } finally {
-                                            btn.innerText = originalText;
-                                            btn.disabled = false;
-                                        }
-                                    }}
-                                    className="text-xs bg-purple-500 hover:bg-purple-600 text-white px-3 py-1.5 rounded-lg transition flex items-center gap-1 shadow-sm"
-                                >
-                                    ✨ AI 자동 완성
-                                </button>
+                                <span className="text-xs text-white/60">
+                                    💡 나만의 대사를 써보세요!
+                                </span>
 
                                 <div className="flex gap-2">
                                     <button

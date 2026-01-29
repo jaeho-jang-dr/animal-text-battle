@@ -285,9 +285,9 @@ export default function HomePage() {
               </div>
               <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100 hover:shadow-xl transition-shadow hover:-translate-y-1 transform duration-300">
                 <div className="text-5xl mb-6 bg-white w-20 h-20 flex items-center justify-center rounded-2xl shadow-sm mx-auto">3️⃣</div>
-                <h3 className="text-xl font-bold mb-4 text-center">AI 심판과 랭킹</h3>
+                <h3 className="text-xl font-bold mb-4 text-center">공정한 심판과 랭킹</h3>
                 <p className="text-slate-600 text-center leading-relaxed">
-                  배틀은 공정한 <b>AI 심판</b>이 판정합니다.
+                  배틀은 <b>100가지 규칙</b>으로 공정하게 판정합니다.
                   승리하면 점수가 오르고, 1-3위에게는<br />특별한 <b>뱃지</b>가 수여됩니다! 🥇
                 </p>
               </div>
@@ -318,13 +318,14 @@ export default function HomePage() {
                     </div>
                   </div>
                   <div className="flex items-start gap-4">
-                    <div className="bg-red-100 p-3 rounded-2xl text-red-600 font-bold text-xl min-w-[60px] text-center">AI</div>
+                    <div className="bg-red-100 p-3 rounded-2xl text-red-600 font-bold text-xl min-w-[60px] text-center">📊</div>
                     <div>
-                      <h4 className="font-bold text-lg text-slate-800">AI 심판의 판정 요소</h4>
+                      <h4 className="font-bold text-lg text-slate-800">심판의 판정 요소</h4>
                       <ul className="text-slate-600 text-sm mt-2 space-y-1 list-disc list-inside">
-                        <li><b>논리성</b>: 말이 되는 공격인가?</li>
-                        <li><b>창의성</b>: 기발한 묘사인가?</li>
-                        <li><b>특성 반영</b>: 동물의 실제 능력을 활용했는가?</li>
+                        <li><b>창의성</b>: 기발한 표현을 사용했는가? (30점)</li>
+                        <li><b>동물 특징</b>: 동물의 특성을 잘 살렸는가? (25점)</li>
+                        <li><b>임팩트</b>: 박력 있는 대사인가? (20점)</li>
+                        <li><b>재치</b>: 유머와 센스가 있는가? (15점)</li>
                       </ul>
                     </div>
                   </div>

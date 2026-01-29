@@ -355,7 +355,7 @@ function CreateCharacterContent() {
                 required
               />
               <div className="flex justify-between mt-2 text-sm items-center">
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   <button
                     type="button"
                     onClick={() => router.push('/text-guide')}
@@ -363,41 +363,9 @@ function CreateCharacterContent() {
                   >
                     📝 작성 가이드
                   </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!characterName || !selectedAnimal) {
-                        alert("먼저 동물과 이름을 정해주세요!");
-                        return;
-                      }
-                      try {
-                        setIsLoading(true);
-                        const res = await fetch('/api/ai/generate-text', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            animalName: selectedAnimal.korean_name,
-                            characterName: characterName
-                          })
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                          setBattleText(data.text);
-                        } else {
-                          console.error("Server error:", data.error);
-                          alert(`생성에 실패했어요 ㅠㅠ\n이유: ${data.error}`);
-                        }
-                      } catch (e) {
-                        console.error(e);
-                        alert("오류가 발생했어요.");
-                      } finally {
-                        setIsLoading(false);
-                      }
-                    }}
-                    className="bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-4 py-2 rounded-xl font-bold transition-colors flex items-center gap-2 border border-indigo-200"
-                  >
-                    <span>✨</span> AI로 자동 생성
-                  </button>
+                  <span className="text-slate-500 text-xs">
+                    💡 동물 특징을 살려 창의적으로 써보세요!
+                  </span>
                 </div>
                 <span className={`${battleText.length < 10 ? 'text-red-600' :
                   battleText.length > 100 ? 'text-red-600' : 'text-green-600'

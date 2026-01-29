@@ -15,8 +15,8 @@ const genAI = new GoogleGenerativeAI(apiKey || '');
 
 // Helper to get response text safely using ONLY the working model
 async function generateWithFallback(prompt: string, isJson: boolean = false): Promise<string> {
-    // Using gemini-1.5-flash for better free tier quota (2.0-flash has very limited quota)
-    const modelName = "gemini-1.5-flash";
+    // Using gemini-2.0-flash (API key only supports 2.0+ models)
+    const modelName = "gemini-2.0-flash";
     
     console.log(`[Gemini] Using model: ${modelName} (JSON: ${isJson})`);
     console.log(`[Gemini] API Key being used: ${apiKey?.substring(0, 10)}...`);

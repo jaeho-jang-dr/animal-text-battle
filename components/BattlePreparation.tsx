@@ -87,7 +87,7 @@ export default function BattlePreparation({
           <h3 className="text-xl font-bold">{getName(defender)}</h3>
           <p className="text-sm text-gray-600">
             상대 캐릭터
-            {defender?.isBot && ' (🤖 AI)'}
+            {defender?.isBot && ' (🤖 봇)'}
           </p>
         </div>
       </div>
